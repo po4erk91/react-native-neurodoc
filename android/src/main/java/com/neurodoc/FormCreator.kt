@@ -104,17 +104,17 @@ object FormCreator {
                     val bbox = field["boundingBox"] as? Map<*, *> ?: continue
                     val type = (field["type"] as? String) ?: "text"
                     val defaultValue = (field["defaultValue"] as? String) ?: ""
+                    val nx = (bbox["x"] as? Double)?.toFloat() ?: 0f
+                    val ny = (bbox["y"] as? Double)?.toFloat() ?: 0f
+                    val nw = (bbox["width"] as? Double)?.toFloat() ?: 0f
+                    val nh = (bbox["height"] as? Double)?.toFloat() ?: 0f
+
                     var fontSize = (field["fontSize"] as? Double)?.toFloat() ?: 0f
                     // If fontSize is 0, estimate from bounding box height (~85% of box height in points)
                     if (fontSize <= 0f) {
                         fontSize = nh * mediaBox.height * 0.85f
                         if (fontSize < 4f) fontSize = 12f // fallback minimum
                     }
-
-                    val nx = (bbox["x"] as? Double)?.toFloat() ?: 0f
-                    val ny = (bbox["y"] as? Double)?.toFloat() ?: 0f
-                    val nw = (bbox["width"] as? Double)?.toFloat() ?: 0f
-                    val nh = (bbox["height"] as? Double)?.toFloat() ?: 0f
 
                     val pdfX = nx * mediaBox.width
                     val pdfY = mediaBox.height - ny * mediaBox.height - nh * mediaBox.height

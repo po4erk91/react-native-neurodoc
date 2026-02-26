@@ -354,7 +354,7 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
     }
 
     fun getPageViews(): List<ImageView> = pageViews
-    fun getScrollY(): Int = scrollView.scrollY
+    fun getCurrentScrollY(): Int = scrollView.scrollY
     fun getOverlayItems(): List<OverlayItemData> = overlayItems
 
     fun setTextOverlaysInternal(items: List<OverlayItemData>) {
@@ -529,7 +529,7 @@ private class OverlayView(context: Context, private val pdfViewer: PdfViewerView
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val pageViews = pdfViewer.getPageViews()
-        val scrollY = pdfViewer.getScrollY()
+        val scrollY = pdfViewer.getCurrentScrollY()
         val items = pdfViewer.getOverlayItems()
 
         for (item in items) {
@@ -579,7 +579,7 @@ private class OverlayView(context: Context, private val pdfViewer: PdfViewerView
         if (!pdfViewer.enableOverlayTap) return false
 
         val pageViews = pdfViewer.getPageViews()
-        val scrollY = pdfViewer.getScrollY()
+        val scrollY = pdfViewer.getCurrentScrollY()
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {

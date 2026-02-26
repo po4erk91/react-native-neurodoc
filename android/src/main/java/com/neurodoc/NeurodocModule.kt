@@ -13,7 +13,7 @@ import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
-import com.tom_roush.pdfbox.merger.PDFMergerUtility
+import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -115,7 +115,7 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
                 merger.destinationFileName = outputFile.absolutePath
 
                 for (i in 0 until pdfUrls.size()) {
-                    val file = resolveFile(pdfUrls.getString(i))
+                    val file = resolveFile(pdfUrls.getString(i)!!)
                     merger.addSource(file)
                 }
 
@@ -516,6 +516,12 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
                 promise.reject("FORM_FAILED", e.message, e)
             }
         }
+    }
+
+    // MARK: - pickDocument
+
+    override fun pickDocument(promise: Promise) {
+        promise.reject("NOT_IMPLEMENTED", "pickDocument is not yet implemented on Android")
     }
 
     // MARK: - cleanupTempFiles

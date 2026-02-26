@@ -394,6 +394,33 @@ export default function App() {
     }
   }, [pdfUrl]);
 
+  // --- Redact ---
+  const handleRedact = useCallback(async () => {
+    if (!pdfUrl) return;
+    setLoading(true);
+    try {
+      const result = await NeuroDoc.redact({
+        pdfUrl,
+        redactions: [
+          {
+            pageIndex: 0,
+            rects: [
+              { x: 0.1, y: 0.1, width: 0.8, height: 0.05 },
+              { x: 0.1, y: 0.3, width: 0.6, height: 0.04 },
+            ],
+            color: '#000000',
+          },
+        ],
+      });
+      setPdfUrl(result.pdfUrl);
+      Alert.alert('Redacted', `${result.pagesRedacted} page(s) redacted`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [pdfUrl]);
+
   // --- Extract Text ---
   const handleExtractText = useCallback(async () => {
     if (!pdfUrl) return;
@@ -1034,6 +1061,17 @@ export default function App() {
             title="Add Watermark"
             onPress={handleAddWatermark}
             disabled={!pdfUrl}
+          />
+        </View>
+
+        {/* Redaction */}
+        <Text style={styles.sectionTitle}>Redaction</Text>
+        <View style={styles.buttonRow}>
+          <ActionButton
+            title="Redact Page 1"
+            onPress={handleRedact}
+            disabled={!pdfUrl}
+            color="#1C1C1E"
           />
         </View>
 

@@ -14,6 +14,7 @@ export type NeurodocErrorCode =
   | 'WATERMARK_FAILED'
   | 'TEMPLATE_FAILED'
   | 'TEXT_EXTRACTION_FAILED'
+  | 'REDACTION_FAILED'
   | 'CLEANUP_FAILED';
 
 export interface NeurodocError extends Error {
@@ -241,6 +242,33 @@ export interface Spec extends TurboModule {
     pageIndexes?: number[];
   }): Promise<{
     pdfUrl: string;
+  }>;
+
+  // --- Redaction ---
+
+  /**
+   * Redact (permanently destroy) content from PDF regions.
+   * Uses rasterization to guarantee byte-level content destruction.
+   * Coordinates are normalized (0-1 range, top-left origin).
+   * Only pages containing redactions are rasterized; others pass through unchanged.
+   */
+  redact(options: {
+    pdfUrl: string;
+    redactions: Array<{
+      pageIndex: number;
+      rects: Array<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>;
+      color?: string; // fill color for redaction, default '#000000'
+    }>;
+    dpi?: number; // rasterization DPI, default 300
+    stripMetadata?: boolean; // remove PDF metadata, default false
+  }): Promise<{
+    pdfUrl: string;
+    pagesRedacted: number;
   }>;
 
   // --- Template PDF Generation ---

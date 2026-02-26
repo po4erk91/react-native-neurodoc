@@ -410,6 +410,22 @@ public class NeurodocImpl: NSObject {
         }
     }
 
+    // MARK: - redact
+
+    public func redact(pdfUrl: String, redactions: [[String: Any]], dpi: Double, stripMetadata: Bool, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            RedactionProcessor.redact(
+                pdfUrl: pdfUrl,
+                redactions: redactions,
+                dpi: dpi,
+                stripMetadata: stripMetadata,
+                tempDirectory: tempDirectory,
+                resolver: resolver,
+                rejecter: rejecter
+            )
+        }
+    }
+
     // MARK: - generateFromTemplate
 
     public func generateFromTemplate(templateJson: String, dataJson: String, fileName: String, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {

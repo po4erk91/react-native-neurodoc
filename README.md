@@ -14,6 +14,7 @@ A high-performance React Native TurboModule for comprehensive PDF operations on 
 - **Forms (AcroForm)** - Read fields, fill values, create forms from scratch, flatten
 - **Encryption** - Password-protect PDFs with AES; decrypt to remove protection
 - **Watermarks** - Text and image watermarks with opacity, rotation, page targeting
+- **Redaction** - Irreversible content destruction via rasterization (GDPR/HIPAA)
 - **Template Generation** - Create PDFs from declarative templates with data binding
 - **Native PDF Viewer** - Scroll/page/grid modes, overlays, text selection, zoom
 - **Document Picker** - System file picker with cross-platform support
@@ -269,6 +270,33 @@ await NeuroDoc.addWatermark({
 
 ---
 
+### Redaction
+
+Permanently destroy content in PDF regions. Uses rasterization to guarantee byte-level destruction — original text cannot be recovered even with forensic tools. For GDPR/HIPAA compliance.
+
+```typescript
+const result = await NeuroDoc.redact({
+  pdfUrl,
+  redactions: [
+    {
+      pageIndex: 0,
+      rects: [
+        { x: 0.1, y: 0.2, width: 0.5, height: 0.03 },
+        { x: 0.1, y: 0.4, width: 0.3, height: 0.02 },
+      ],
+      color: '#000000', // default black, or '#FFFFFF' for white-out
+    },
+  ],
+  dpi: 300, // 150=fast, 300=print (default), 600=archival
+  stripMetadata: true, // remove title, author, etc.
+});
+// { pdfUrl, pagesRedacted }
+```
+
+Only pages with redactions are rasterized; others pass through unchanged with original vector quality.
+
+---
+
 ### Template PDF Generation
 
 Generate PDFs from declarative JSON templates with `{{placeholder}}` data binding.
@@ -453,6 +481,7 @@ try {
 | `FORM_FAILED` | Form operation error |
 | `ENCRYPTION_FAILED` | Encrypt/decrypt error |
 | `WATERMARK_FAILED` | Watermark error |
+| `REDACTION_FAILED` | Redaction error |
 | `TEMPLATE_FAILED` | Template generation error |
 | `TEXT_EXTRACTION_FAILED` | Text extraction error |
 | `CLEANUP_FAILED` | Temp cleanup error |

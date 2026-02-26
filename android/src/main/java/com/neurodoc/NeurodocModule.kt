@@ -465,6 +465,25 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    // MARK: - redact
+
+    override fun redact(options: ReadableMap, promise: Promise) {
+        scope.launch {
+            try {
+                val pdfUrl = options.getString("pdfUrl")!!
+                val redactions = options.getArray("redactions")!!
+                val dpi = if (options.hasKey("dpi") && !options.isNull("dpi"))
+                    options.getDouble("dpi").toFloat() else 300f
+                val stripMetadata = if (options.hasKey("stripMetadata") && !options.isNull("stripMetadata"))
+                    options.getBoolean("stripMetadata") else false
+
+                RedactionProcessor.redact(pdfUrl, redactions, dpi, stripMetadata, tempDir, promise)
+            } catch (e: Exception) {
+                promise.reject("REDACTION_FAILED", e.message, e)
+            }
+        }
+    }
+
     // MARK: - generateFromTemplate
 
     override fun generateFromTemplate(options: ReadableMap, promise: Promise) {

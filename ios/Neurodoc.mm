@@ -346,6 +346,48 @@
                          rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
 }
 
+// MARK: - redact
+
+- (void)redact:(JS::NativeNeurodoc::SpecRedactOptions &)options
+       resolve:(RCTPromiseResolveBlock)resolve
+        reject:(RCTPromiseRejectBlock)reject {
+    NSString *pdfUrl = options.pdfUrl();
+    double dpi = options.dpi().has_value() ? options.dpi().value() : 300.0;
+    bool stripMetadata = options.stripMetadata().has_value() ? options.stripMetadata().value() : false;
+
+    auto rawRedactions = options.redactions();
+    NSMutableArray<NSDictionary *> *redactions = [NSMutableArray new];
+
+    for (size_t i = 0; i < rawRedactions.size(); i++) {
+        auto r = rawRedactions[i];
+        NSMutableDictionary *dict = [NSMutableDictionary new];
+        dict[@"pageIndex"] = @(r.pageIndex());
+        if (r.color()) dict[@"color"] = r.color();
+
+        auto rawRects = r.rects();
+        NSMutableArray *rects = [NSMutableArray new];
+        for (size_t j = 0; j < rawRects.size(); j++) {
+            auto rect = rawRects[j];
+            [rects addObject:@{
+                @"x": @(rect.x()),
+                @"y": @(rect.y()),
+                @"width": @(rect.width()),
+                @"height": @(rect.height()),
+            }];
+        }
+        dict[@"rects"] = rects;
+
+        [redactions addObject:dict];
+    }
+
+    [_impl redactWithPdfUrl:pdfUrl
+                 redactions:redactions
+                        dpi:dpi
+              stripMetadata:stripMetadata
+                   resolver:^(NSDictionary *result) { resolve(result); }
+                   rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
 // MARK: - generateFromTemplate
 
 - (void)generateFromTemplate:(JS::NativeNeurodoc::SpecGenerateFromTemplateOptions &)options

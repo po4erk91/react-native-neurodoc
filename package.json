@@ -1,6 +1,6 @@
 {
   "name": "react-native-neurodoc",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "React Native Neurodoc",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

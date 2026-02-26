@@ -64,4 +64,13 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
+
+  // Coroutines for async operations
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+
+  // Google ML Kit Text Recognition for OCR
+  implementation "com.google.mlkit:text-recognition:16.0.1"
+
+  // Apache PDFBox for lossless PDF page operations, forms, annotations, encryption
+  implementation "com.tom_roush:pdfbox-android:2.0.27.0"
 }

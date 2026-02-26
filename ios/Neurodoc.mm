@@ -388,6 +388,43 @@
                    rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
 }
 
+// MARK: - editContent
+
+- (void)editContent:(JS::NativeNeurodoc::SpecEditContentOptions &)options
+            resolve:(RCTPromiseResolveBlock)resolve
+             reject:(RCTPromiseRejectBlock)reject {
+    NSString *pdfUrl = options.pdfUrl();
+
+    auto rawEdits = options.edits();
+    NSMutableArray<NSDictionary *> *edits = [NSMutableArray new];
+
+    for (size_t i = 0; i < rawEdits.size(); i++) {
+        auto e = rawEdits[i];
+        NSMutableDictionary *dict = [NSMutableDictionary new];
+        dict[@"pageIndex"] = @(e.pageIndex());
+        dict[@"newText"] = e.newText();
+
+        auto bbox = e.boundingBox();
+        dict[@"boundingBox"] = @{
+            @"x": @(bbox.x()),
+            @"y": @(bbox.y()),
+            @"width": @(bbox.width()),
+            @"height": @(bbox.height()),
+        };
+
+        if (e.fontSize().has_value()) dict[@"fontSize"] = @(e.fontSize().value());
+        if (e.fontName()) dict[@"fontName"] = e.fontName();
+        if (e.color()) dict[@"color"] = e.color();
+
+        [edits addObject:dict];
+    }
+
+    [_impl editContentWithPdfUrl:pdfUrl
+                           edits:edits
+                        resolver:^(NSDictionary *result) { resolve(result); }
+                        rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
 // MARK: - generateFromTemplate
 
 - (void)generateFromTemplate:(JS::NativeNeurodoc::SpecGenerateFromTemplateOptions &)options

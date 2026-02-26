@@ -15,6 +15,7 @@ export type NeurodocErrorCode =
   | 'TEMPLATE_FAILED'
   | 'TEXT_EXTRACTION_FAILED'
   | 'REDACTION_FAILED'
+  | 'CONTENT_EDIT_FAILED'
   | 'CLEANUP_FAILED';
 
 export interface NeurodocError extends Error {
@@ -315,6 +316,34 @@ export interface Spec extends TurboModule {
     pageWidth: number;
     pageHeight: number;
     mode: string;
+  }>;
+
+  // --- Content Editing ---
+
+  /**
+   * Replace text in a PDF by visually covering original text and overlaying new text.
+   * Uses white-out + overlay approach (no content stream modification).
+   * Coordinates are normalized (0-1 range, top-left origin).
+   * Workflow: extractText() to get positions, then editContent() with bounding boxes.
+   */
+  editContent(options: {
+    pdfUrl: string;
+    edits: Array<{
+      pageIndex: number;
+      boundingBox: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      newText: string;
+      fontSize?: number;
+      fontName?: string; // 'Helvetica' | 'Courier' | 'TimesNewRoman'
+      color?: string; // hex color, default '#000000'
+    }>;
+  }): Promise<{
+    pdfUrl: string;
+    editsApplied: number;
   }>;
 
   // --- Form Creation ---

@@ -484,6 +484,21 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    // MARK: - editContent
+
+    override fun editContent(options: ReadableMap, promise: Promise) {
+        scope.launch {
+            try {
+                val pdfUrl = options.getString("pdfUrl")!!
+                val edits = options.getArray("edits")!!
+
+                ContentEditor.editContent(pdfUrl, edits, tempDir, promise)
+            } catch (e: Exception) {
+                promise.reject("CONTENT_EDIT_FAILED", e.message, e)
+            }
+        }
+    }
+
     // MARK: - generateFromTemplate
 
     override fun generateFromTemplate(options: ReadableMap, promise: Promise) {

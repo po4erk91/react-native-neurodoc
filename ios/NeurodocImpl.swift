@@ -449,6 +449,20 @@ public class NeurodocImpl: NSObject {
         }
     }
 
+    // MARK: - editContent
+
+    public func editContent(pdfUrl: String, edits: [[String: Any]], resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            ContentEditor.editContent(
+                pdfUrl: pdfUrl,
+                edits: edits,
+                tempDirectory: tempDirectory,
+                resolver: resolver,
+                rejecter: rejecter
+            )
+        }
+    }
+
     // MARK: - createFormFromPdf
 
     public func createFormFromPdf(pdfUrl: String, fields: [[String: Any]], removeOriginalText: Bool, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {

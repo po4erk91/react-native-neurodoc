@@ -445,6 +445,42 @@ export default function App() {
     }
   }, [pdfUrl]);
 
+  // --- Edit Content (inline text replacement) ---
+  const handleEditContent = useCallback(async () => {
+    if (!pdfUrl) return;
+    setLoading(true);
+    try {
+      const result = await NeuroDoc.extractText({
+        pdfUrl,
+        pageIndex: 0,
+      });
+
+      if (result.textBlocks.length === 0) {
+        Alert.alert('No text', 'No text blocks found on page 1');
+        return;
+      }
+
+      // Replace first 3 text blocks with demo text
+      const edits = result.textBlocks.slice(0, 3).map((block: any, i: number) => ({
+        pageIndex: 0,
+        boundingBox: block.boundingBox,
+        newText: `Edited #${i + 1}`,
+        fontSize: block.fontSize,
+      }));
+
+      const edited = await NeuroDoc.editContent({ pdfUrl, edits });
+      setPdfUrl(edited.pdfUrl);
+      Alert.alert(
+        'Content Edited',
+        `${edited.editsApplied} text block(s) replaced on page 1`
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [pdfUrl]);
+
   // --- Create Form From PDF ---
   const handleCreateFormFromPdf = useCallback(async () => {
     if (!pdfUrl) return;
@@ -995,14 +1031,20 @@ export default function App() {
           />
         </View>
 
-        {/* Text Extraction & Form Creation */}
-        <Text style={styles.sectionTitle}>Text Extraction</Text>
+        {/* Text Extraction & Content Editing */}
+        <Text style={styles.sectionTitle}>Text & Content</Text>
         <View style={styles.buttonRow}>
           <ActionButton
             title="Extract Text"
             onPress={handleExtractText}
             disabled={!pdfUrl}
             color="#8E44AD"
+          />
+          <ActionButton
+            title="Edit Content"
+            onPress={handleEditContent}
+            disabled={!pdfUrl}
+            color="#D35400"
           />
           <ActionButton
             title="Create Form from PDF"

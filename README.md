@@ -14,6 +14,7 @@ A high-performance React Native TurboModule for comprehensive PDF operations on 
 - **Forms (AcroForm)** - Read fields, fill values, create forms from scratch, flatten
 - **Encryption** - Password-protect PDFs with AES; decrypt to remove protection
 - **Watermarks** - Text and image watermarks with opacity, rotation, page targeting
+- **Content Editing** - Inline text replacement in PDFs without forms or rasterization
 - **Redaction** - Irreversible content destruction via rasterization (GDPR/HIPAA)
 - **Template Generation** - Create PDFs from declarative templates with data binding
 - **Native PDF Viewer** - Scroll/page/grid modes, overlays, text selection, zoom
@@ -270,6 +271,41 @@ await NeuroDoc.addWatermark({
 
 ---
 
+### Content Editing
+
+Replace existing text in a PDF inline — without forms or rasterization. Uses white-out + overlay approach to visually replace text while keeping vector quality.
+
+```typescript
+// 1. Extract text to get positions
+const { textBlocks } = await NeuroDoc.extractText({
+  pdfUrl,
+  pageIndex: 0,
+});
+
+// 2. Find the text to replace
+const target = textBlocks.find(b => b.text.includes('Old Company'));
+
+// 3. Replace it
+const result = await NeuroDoc.editContent({
+  pdfUrl,
+  edits: [
+    {
+      pageIndex: 0,
+      boundingBox: target.boundingBox,
+      newText: 'New Company',
+      fontSize: target.fontSize,
+      fontName: 'Helvetica', // 'Helvetica' | 'Courier' | 'TimesNewRoman'
+      color: '#000000',
+    },
+  ],
+});
+// { pdfUrl, editsApplied }
+```
+
+Multiple edits across different pages can be batched in a single call.
+
+---
+
 ### Redaction
 
 Permanently destroy content in PDF regions. Uses rasterization to guarantee byte-level destruction — original text cannot be recovered even with forensic tools. For GDPR/HIPAA compliance.
@@ -482,6 +518,7 @@ try {
 | `ENCRYPTION_FAILED` | Encrypt/decrypt error |
 | `WATERMARK_FAILED` | Watermark error |
 | `REDACTION_FAILED` | Redaction error |
+| `CONTENT_EDIT_FAILED` | Content editing error |
 | `TEMPLATE_FAILED` | Template generation error |
 | `TEXT_EXTRACTION_FAILED` | Text extraction error |
 | `CLEANUP_FAILED` | Temp cleanup error |

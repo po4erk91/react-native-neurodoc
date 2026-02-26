@@ -45,14 +45,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicedoc/react-native-neurodoc.git"
+    "url": "git+https://github.com/po4erk91/react-native-neurodoc.git"
   },
   "author": "Dmytro <dmytro@example.com> (https://github.com/nicedoc)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/nicedoc/react-native-neurodoc/issues"
+    "url": "https://github.com/po4erk91/react-native-neurodoc/issues"
   },
-  "homepage": "https://github.com/nicedoc/react-native-neurodoc#readme",
+  "homepage": "https://github.com/po4erk91/react-native-neurodoc#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

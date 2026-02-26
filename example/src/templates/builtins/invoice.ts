@@ -127,7 +127,12 @@ export const invoiceTemplate: TemplateDefinition = {
     {
       type: 'table',
       columns: [
-        { header: 'Description', key: 'description', width: 4, alignment: 'left' },
+        {
+          header: 'Description',
+          key: 'description',
+          width: 4,
+          alignment: 'left',
+        },
         { header: 'Qty', key: 'quantity', width: 1, alignment: 'center' },
         { header: 'Rate', key: 'rate', width: 1, alignment: 'right' },
         { header: 'Amount', key: 'amount', width: 1, alignment: 'right' },

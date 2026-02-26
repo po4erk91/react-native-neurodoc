@@ -83,10 +83,7 @@ export interface Spec extends TurboModule {
   /**
    * Merge multiple PDFs into one.
    */
-  merge(options: {
-    pdfUrls: string[];
-    fileName?: string;
-  }): Promise<{
+  merge(options: { pdfUrls: string[]; fileName?: string }): Promise<{
     pdfUrl: string;
     pageCount: number;
     fileSize: number;
@@ -96,20 +93,14 @@ export interface Spec extends TurboModule {
    * Split a PDF into multiple files by page ranges.
    * Each range is [startPage, endPage] (inclusive, 0-based).
    */
-  split(options: {
-    pdfUrl: string;
-    ranges: Array<number[]>;
-  }): Promise<{
+  split(options: { pdfUrl: string; ranges: Array<number[]> }): Promise<{
     pdfUrls: string[];
   }>;
 
   /**
    * Delete pages from a PDF by their indices.
    */
-  deletePages(options: {
-    pdfUrl: string;
-    pageIndexes: number[];
-  }): Promise<{
+  deletePages(options: { pdfUrl: string; pageIndexes: number[] }): Promise<{
     pdfUrl: string;
     pageCount: number;
   }>;
@@ -118,10 +109,7 @@ export interface Spec extends TurboModule {
    * Reorder pages in a PDF.
    * The order array contains the new index arrangement, e.g. [2, 0, 1, 3].
    */
-  reorderPages(options: {
-    pdfUrl: string;
-    order: number[];
-  }): Promise<{
+  reorderPages(options: { pdfUrl: string; order: number[] }): Promise<{
     pdfUrl: string;
   }>;
 
@@ -178,10 +166,7 @@ export interface Spec extends TurboModule {
   /**
    * Delete an annotation by ID.
    */
-  deleteAnnotation(options: {
-    pdfUrl: string;
-    annotationId: string;
-  }): Promise<{
+  deleteAnnotation(options: { pdfUrl: string; annotationId: string }): Promise<{
     pdfUrl: string;
   }>;
 
@@ -236,10 +221,7 @@ export interface Spec extends TurboModule {
   /**
    * Decrypt a password-protected PDF.
    */
-  decrypt(options: {
-    pdfUrl: string;
-    password: string;
-  }): Promise<{
+  decrypt(options: { pdfUrl: string; password: string }): Promise<{
     pdfUrl: string;
   }>;
 

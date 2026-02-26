@@ -15,9 +15,21 @@ import { PdfViewer, type PdfViewerRef } from './PdfViewer';
 import { PdfFieldMarker, type PdfFieldMarkerRef } from './PdfFieldMarker';
 import { PdfFormFiller, type PdfFormFillerRef } from './PdfFormFiller';
 import { generatePdf } from './templates';
-import { randomInvoiceData, randomReceiptData, randomContractData, randomLetterData } from './randomData';
+import {
+  randomInvoiceData,
+  randomReceiptData,
+  randomContractData,
+  randomLetterData,
+} from './randomData';
 
-type Screen = 'home' | 'viewer' | 'metadata' | 'annotations' | 'formFields' | 'fieldMarker' | 'formFiller';
+type Screen =
+  | 'home'
+  | 'viewer'
+  | 'metadata'
+  | 'annotations'
+  | 'formFields'
+  | 'fieldMarker'
+  | 'formFiller';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
@@ -28,7 +40,9 @@ export default function App() {
   const [annotations, setAnnotations] = useState<any[]>([]);
   const [formFields, setFormFields] = useState<any[]>([]);
   const [pageInfo, setPageInfo] = useState({ page: 0, total: 0 });
-  const [viewMode, setViewMode] = useState<'scroll' | 'single' | 'grid'>('scroll');
+  const [viewMode, setViewMode] = useState<'scroll' | 'single' | 'grid'>(
+    'scroll'
+  );
   const [loading, setLoading] = useState(false);
   const [templateUrl, setTemplateUrl] = useState('');
   const viewerRef = useRef<PdfViewerRef>(null);
@@ -150,7 +164,10 @@ export default function App() {
         ],
       });
       setPdfUrl(result.pdfUrls[0]!);
-      Alert.alert('Split', `Created ${result.pdfUrls.length} PDFs. Showing first part.`);
+      Alert.alert(
+        'Split',
+        `Created ${result.pdfUrls.length} PDFs. Showing first part.`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -168,7 +185,10 @@ export default function App() {
         pageIndexes: [0],
       });
       setPdfUrl(result.pdfUrl);
-      Alert.alert('Done', `First page deleted. ${result.pageCount} pages left.`);
+      Alert.alert(
+        'Done',
+        `First page deleted. ${result.pageCount} pages left.`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -182,7 +202,10 @@ export default function App() {
     setLoading(true);
     try {
       const meta = await NeuroDoc.getMetadata(pdfUrl);
-      const reversed = Array.from({ length: meta.pageCount }, (_, i) => meta.pageCount - 1 - i);
+      const reversed = Array.from(
+        { length: meta.pageCount },
+        (_, i) => meta.pageCount - 1 - i
+      );
       const result = await NeuroDoc.reorderPages({
         pdfUrl,
         order: reversed,
@@ -295,8 +318,8 @@ export default function App() {
           f.type === 'checkbox'
             ? 'true'
             : f.type === 'dropdown' && f.options.length > 0
-              ? f.options[0]!
-              : `Test ${f.name}`,
+            ? f.options[0]!
+            : `Test ${f.name}`,
       }));
       const result = await NeuroDoc.fillForm({
         pdfUrl,
@@ -407,19 +430,24 @@ export default function App() {
       });
 
       if (extracted.textBlocks.length < 3) {
-        Alert.alert('Not enough text', 'Need at least 3 text blocks to demo form creation');
+        Alert.alert(
+          'Not enough text',
+          'Need at least 3 text blocks to demo form creation'
+        );
         return;
       }
 
       // Pick first 3 text blocks as "dynamic" fields
-      const fields = extracted.textBlocks.slice(0, 3).map((block: any, i: number) => ({
-        name: `field_${i}`,
-        pageIndex: 0,
-        boundingBox: block.boundingBox,
-        type: 'text' as const,
-        defaultValue: block.text,
-        fontSize: block.fontSize,
-      }));
+      const fields = extracted.textBlocks
+        .slice(0, 3)
+        .map((block: any, i: number) => ({
+          name: `field_${i}`,
+          pageIndex: 0,
+          boundingBox: block.boundingBox,
+          type: 'text' as const,
+          defaultValue: block.text,
+          fontSize: block.fontSize,
+        }));
 
       const result = await NeuroDoc.createFormFromPdf({
         pdfUrl,
@@ -428,7 +456,10 @@ export default function App() {
       });
 
       setPdfUrl(result.pdfUrl);
-      Alert.alert('Form Created', `Created fillable PDF with ${fields.length} fields. Use "Get Form Fields" to verify.`);
+      Alert.alert(
+        'Form Created',
+        `Created fillable PDF with ${fields.length} fields. Use "Get Form Fields" to verify.`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -459,7 +490,10 @@ export default function App() {
         fileName: 'invoice-demo',
       });
       setPdfUrl(result.pdfUrl);
-      Alert.alert('Invoice Generated', `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`);
+      Alert.alert(
+        'Invoice Generated',
+        `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -479,7 +513,10 @@ export default function App() {
         fileName: 'receipt-demo',
       });
       setPdfUrl(result.pdfUrl);
-      Alert.alert('Receipt Generated', `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`);
+      Alert.alert(
+        'Receipt Generated',
+        `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -499,7 +536,10 @@ export default function App() {
         fileName: 'contract-demo',
       });
       setPdfUrl(result.pdfUrl);
-      Alert.alert('Contract Generated', `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`);
+      Alert.alert(
+        'Contract Generated',
+        `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -519,7 +559,10 @@ export default function App() {
         fileName: 'letter-demo',
       });
       setPdfUrl(result.pdfUrl);
-      Alert.alert('Letter Generated', `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`);
+      Alert.alert(
+        'Letter Generated',
+        `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`
+      );
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -558,7 +601,9 @@ export default function App() {
             }}
             disabled={!templateUrl}
           >
-            <Text style={[styles.toolbarBtn, !templateUrl && { color: '#ccc' }]}>
+            <Text
+              style={[styles.toolbarBtn, !templateUrl && { color: '#ccc' }]}
+            >
               Fill
             </Text>
           </TouchableOpacity>
@@ -634,26 +679,50 @@ export default function App() {
           </Text>
           <View style={styles.modeToggle}>
             <TouchableOpacity
-              style={[styles.modeBtn, viewMode === 'scroll' && styles.modeBtnActive]}
+              style={[
+                styles.modeBtn,
+                viewMode === 'scroll' && styles.modeBtnActive,
+              ]}
               onPress={() => setViewMode('scroll')}
             >
-              <Text style={[styles.modeBtnText, viewMode === 'scroll' && styles.modeBtnTextActive]}>
+              <Text
+                style={[
+                  styles.modeBtnText,
+                  viewMode === 'scroll' && styles.modeBtnTextActive,
+                ]}
+              >
                 Scroll
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modeBtn, viewMode === 'single' && styles.modeBtnActive]}
+              style={[
+                styles.modeBtn,
+                viewMode === 'single' && styles.modeBtnActive,
+              ]}
               onPress={() => setViewMode('single')}
             >
-              <Text style={[styles.modeBtnText, viewMode === 'single' && styles.modeBtnTextActive]}>
+              <Text
+                style={[
+                  styles.modeBtnText,
+                  viewMode === 'single' && styles.modeBtnTextActive,
+                ]}
+              >
                 Page
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modeBtn, viewMode === 'grid' && styles.modeBtnActive]}
+              style={[
+                styles.modeBtn,
+                viewMode === 'grid' && styles.modeBtnActive,
+              ]}
               onPress={() => setViewMode('grid')}
             >
-              <Text style={[styles.modeBtnText, viewMode === 'grid' && styles.modeBtnTextActive]}>
+              <Text
+                style={[
+                  styles.modeBtnText,
+                  viewMode === 'grid' && styles.modeBtnTextActive,
+                ]}
+              >
                 Grid
               </Text>
             </TouchableOpacity>
@@ -807,7 +876,10 @@ export default function App() {
         </Text>
 
         {/* Pick PDF */}
-        <TouchableOpacity style={styles.pickButton} onPress={handlePickDocument}>
+        <TouchableOpacity
+          style={styles.pickButton}
+          onPress={handlePickDocument}
+        >
           <Text style={styles.pickButtonText}>
             {pdfFileName ?? 'Pick PDF Document'}
           </Text>
@@ -1027,9 +1099,7 @@ function ActionButton({
       onPress={onPress}
       disabled={disabled}
     >
-      <Text
-        style={[styles.actionButtonText, disabled && { color: '#999' }]}
-      >
+      <Text style={[styles.actionButtonText, disabled && { color: '#999' }]}>
         {title}
       </Text>
     </TouchableOpacity>

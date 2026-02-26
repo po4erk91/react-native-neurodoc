@@ -5,8 +5,8 @@ import type {
   Int32,
   WithDefault,
 } from 'react-native/Libraries/Types/CodegenTypesNamespace';
-import codegenNativeCommands from 'react-native/Libraries/Utilities/codegenNativeCommands';
-import codegenNativeComponent from 'react-native/Libraries/Utilities/codegenNativeComponent';
+import { codegenNativeCommands } from 'react-native';
+import { codegenNativeComponent } from 'react-native';
 
 export interface NativePdfViewerViewProps extends ViewProps {
   pdfUrl: string;
@@ -111,10 +111,7 @@ interface NativeCommands {
     viewRef: React.ElementRef<PdfViewerViewType>,
     pageIndex: Int32
   ) => void;
-  zoomTo: (
-    viewRef: React.ElementRef<PdfViewerViewType>,
-    scale: Double
-  ) => void;
+  zoomTo: (viewRef: React.ElementRef<PdfViewerViewType>, scale: Double) => void;
 }
 
 export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({

@@ -1,4 +1,7 @@
-import type { TemplateDefinition, TemplateElement } from 'react-native-neurodoc';
+import type {
+  TemplateDefinition,
+  TemplateElement,
+} from 'react-native-neurodoc';
 
 export interface ContractData {
   title: string;
@@ -120,7 +123,8 @@ export const contractTemplate: TemplateDefinition = {
     { type: 'spacer', height: 40 },
     {
       type: 'text',
-      content: 'IN WITNESS WHEREOF, the parties have executed this agreement as of {{signatureDate}}.',
+      content:
+        'IN WITNESS WHEREOF, the parties have executed this agreement as of {{signatureDate}}.',
       font: { size: 10, italic: true },
       marginBottom: 30,
     },

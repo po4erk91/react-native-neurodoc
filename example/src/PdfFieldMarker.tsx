@@ -86,7 +86,10 @@ type Mode = 'view' | 'placing' | 'adjusting';
 
 let fieldCounter = 0;
 
-export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>(
+export const PdfFieldMarker = forwardRef<
+  PdfFieldMarkerRef,
+  PdfFieldMarkerProps
+>(
   (
     {
       pdfUrl,
@@ -110,15 +113,18 @@ export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>
     const [showFontPicker, setShowFontPicker] = useState(false);
     const [showSizePicker, setShowSizePicker] = useState(false);
 
-    const toMarkedField = useCallback((f: FieldEntry): MarkedField => ({
-      id: f.id,
-      name: f.name,
-      pageIndex: f.pageIndex,
-      boundingBox: { x: f.x, y: f.y, width: f.width, height: f.height },
-      text: f.name,
-      fontSize: f.fontSize,
-      fontName: f.fontName,
-    }), []);
+    const toMarkedField = useCallback(
+      (f: FieldEntry): MarkedField => ({
+        id: f.id,
+        name: f.name,
+        pageIndex: f.pageIndex,
+        boundingBox: { x: f.x, y: f.y, width: f.width, height: f.height },
+        text: f.name,
+        fontSize: f.fontSize,
+        fontName: f.fontName,
+      }),
+      []
+    );
 
     const notifyChange = useCallback(
       (updatedFields: FieldEntry[]) => {
@@ -249,18 +255,22 @@ export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>
       (id: string, _pageIndex: number) => {
         if (mode !== 'view') return;
         // Select field for editing/deletion
-        Alert.alert('Field Options', `Field: ${fields.find((f) => f.id === id)?.name}`, [
-          {
-            text: 'Rename',
-            onPress: () => setEditingNameId(id),
-          },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => removeField(id),
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ]);
+        Alert.alert(
+          'Field Options',
+          `Field: ${fields.find((f) => f.id === id)?.name}`,
+          [
+            {
+              text: 'Rename',
+              onPress: () => setEditingNameId(id),
+            },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => removeField(id),
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
       },
       [mode, fields, removeField]
     );
@@ -282,13 +292,7 @@ export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>
 
     // Handle overlay resized
     const handleOverlayResized = useCallback(
-      (
-        id: string,
-        x: number,
-        y: number,
-        width: number,
-        height: number
-      ) => {
+      (id: string, x: number, y: number, width: number, height: number) => {
         if (activeField && activeField.id === id) {
           setActiveField((prev) =>
             prev ? { ...prev, x, y, width, height } : null
@@ -296,9 +300,7 @@ export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>
           return;
         }
         setFields((prev) =>
-          prev.map((f) =>
-            f.id === id ? { ...f, x, y, width, height } : f
-          )
+          prev.map((f) => (f.id === id ? { ...f, x, y, width, height } : f))
         );
       },
       [activeField]
@@ -434,7 +436,8 @@ export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>
                     >
                       <Text style={styles.fieldName}>{f.name}</Text>
                       <Text style={styles.fieldMeta}>
-                        Page {f.pageIndex + 1} | {fontDisplayName(f.fontName)} {f.fontSize}pt
+                        Page {f.pageIndex + 1} | {fontDisplayName(f.fontName)}{' '}
+                        {f.fontSize}pt
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -453,23 +456,31 @@ export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>
         {/* Font picker dropdown */}
         {showFontPicker && activeField && (
           <View style={styles.pickerPanel}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScroll}
+            >
               {FONT_OPTIONS.map((font) => (
                 <TouchableOpacity
                   key={font}
                   style={[
                     styles.pickerOption,
-                    activeField.fontName === font && styles.pickerOptionSelected,
+                    activeField.fontName === font &&
+                      styles.pickerOptionSelected,
                   ]}
                   onPress={() => {
-                    setActiveField((prev) => prev ? { ...prev, fontName: font } : null);
+                    setActiveField((prev) =>
+                      prev ? { ...prev, fontName: font } : null
+                    );
                     setShowFontPicker(false);
                   }}
                 >
                   <Text
                     style={[
                       styles.pickerOptionText,
-                      activeField.fontName === font && styles.pickerOptionTextSelected,
+                      activeField.fontName === font &&
+                        styles.pickerOptionTextSelected,
                     ]}
                   >
                     {fontDisplayName(font)}
@@ -483,23 +494,31 @@ export const PdfFieldMarker = forwardRef<PdfFieldMarkerRef, PdfFieldMarkerProps>
         {/* Size picker dropdown */}
         {showSizePicker && activeField && (
           <View style={styles.pickerPanel}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScroll}
+            >
               {FONT_SIZE_OPTIONS.map((size) => (
                 <TouchableOpacity
                   key={size}
                   style={[
                     styles.pickerOption,
-                    activeField.fontSize === size && styles.pickerOptionSelected,
+                    activeField.fontSize === size &&
+                      styles.pickerOptionSelected,
                   ]}
                   onPress={() => {
-                    setActiveField((prev) => prev ? { ...prev, fontSize: size } : null);
+                    setActiveField((prev) =>
+                      prev ? { ...prev, fontSize: size } : null
+                    );
                     setShowSizePicker(false);
                   }}
                 >
                   <Text
                     style={[
                       styles.pickerOptionText,
-                      activeField.fontSize === size && styles.pickerOptionTextSelected,
+                      activeField.fontSize === size &&
+                        styles.pickerOptionTextSelected,
                     ]}
                   >
                     {size}

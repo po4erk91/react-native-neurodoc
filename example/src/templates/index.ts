@@ -1,10 +1,7 @@
 import { NeuroDoc, type TemplateDefinition } from 'react-native-neurodoc';
 import { invoiceTemplate } from './builtins/invoice';
 import { receiptTemplate } from './builtins/receipt';
-import {
-  contractTemplate,
-  expandContractSections,
-} from './builtins/contract';
+import { contractTemplate, expandContractSections } from './builtins/contract';
 import { letterTemplate } from './builtins/letter';
 
 export type BuiltInTemplate = 'invoice' | 'receipt' | 'contract' | 'letter';

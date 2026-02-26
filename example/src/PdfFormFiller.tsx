@@ -100,7 +100,7 @@ export const PdfFormFiller = forwardRef<PdfFormFillerRef, PdfFormFillerProps>(
     const [fontSizes, setFontSizes] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(false);
     const [showForm, setShowForm] = useState(true);
-    const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+    const [_editingFieldId, setEditingFieldId] = useState<string | null>(null);
     const [fontPickerFieldId, setFontPickerFieldId] = useState<string | null>(
       null
     );
@@ -129,8 +129,8 @@ export const PdfFormFiller = forwardRef<PdfFormFillerRef, PdfFormFillerProps>(
               const newField = result.fields[i]!;
               const prevField = prevFields[i];
               next[newField.id] = prevField
-                ? (prevValues[prevField.id] ?? newField.value ?? '')
-                : (newField.value ?? '');
+                ? prevValues[prevField.id] ?? newField.value ?? ''
+                : newField.value ?? '';
             }
             return next;
           });
@@ -141,7 +141,7 @@ export const PdfFormFiller = forwardRef<PdfFormFillerRef, PdfFormFillerProps>(
               const prevField = prevFields[i];
               const defaultFont = newField.fontName || 'Helvetica';
               next[newField.id] = prevField
-                ? (prevFonts[prevField.id] ?? defaultFont)
+                ? prevFonts[prevField.id] ?? defaultFont
                 : defaultFont;
             }
             return next;
@@ -153,7 +153,7 @@ export const PdfFormFiller = forwardRef<PdfFormFillerRef, PdfFormFillerProps>(
               const prevField = prevFields[i];
               const defaultSize = newField.fontSize || 12;
               next[newField.id] = prevField
-                ? (prevSizes[prevField.id] ?? defaultSize)
+                ? prevSizes[prevField.id] ?? defaultSize
                 : defaultSize;
             }
             return next;

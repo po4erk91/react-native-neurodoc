@@ -121,7 +121,10 @@ export const PdfViewer = forwardRef<PdfViewerRef, PdfViewerProps>(
 
     const handlePageChanged = useCallback(
       (event: { nativeEvent: { pageIndex: number; pageCount: number } }) => {
-        onPageChanged?.(event.nativeEvent.pageIndex, event.nativeEvent.pageCount);
+        onPageChanged?.(
+          event.nativeEvent.pageIndex,
+          event.nativeEvent.pageCount
+        );
       },
       [onPageChanged]
     );
@@ -153,7 +156,10 @@ export const PdfViewer = forwardRef<PdfViewerRef, PdfViewerProps>(
 
     const handleDocumentChanged = useCallback(
       (event: { nativeEvent: { pdfUrl: string; pageCount: number } }) => {
-        onDocumentChanged?.(event.nativeEvent.pdfUrl, event.nativeEvent.pageCount);
+        onDocumentChanged?.(
+          event.nativeEvent.pdfUrl,
+          event.nativeEvent.pageCount
+        );
       },
       [onDocumentChanged]
     );

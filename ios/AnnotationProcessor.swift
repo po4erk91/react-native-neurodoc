@@ -3,6 +3,10 @@ import PDFKit
 import UIKit
 
 class AnnotationProcessor {
+    /// System/internal PDF annotation types that should be filtered from user-facing lists and diff.
+    /// Watermark is intentionally NOT included — it should be visible in diff.
+    private static let systemAnnotationTypes: Set<String> = ["Widget", "Link", "Popup", "PrinterMark", "TrapNet"]
+
     static func addAnnotations(pdfUrl: String, annotations: [[String: Any]], tempDirectory: URL, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
         guard let url = resolveUrl(pdfUrl), let doc = PDFDocument(url: url) else {
             rejecter("ANNOTATION_FAILED", "Failed to load PDF", nil)
@@ -104,8 +108,9 @@ class AnnotationProcessor {
             let pageBounds = page.bounds(for: .mediaBox)
 
             for annotation in page.annotations {
-                // Skip form widgets and links
-                guard annotation.type != "Widget" && annotation.type != "Link" else { continue }
+                // Skip system/internal annotation types
+                let rawType = annotation.type ?? ""
+                guard !systemAnnotationTypes.contains(rawType) else { continue }
 
                 let bounds = annotation.bounds
                 let normalizedX = bounds.origin.x / pageBounds.width
@@ -170,6 +175,16 @@ class AnnotationProcessor {
 
                 if id == annotationId {
                     page.removeAnnotation(annotation)
+                    // Remove orphaned Popup annotations (PDFKit creates one per Text annotation)
+                    // After removing the note, clean up Popups that no longer have a parent
+                    let remainingNotes = page.annotations.filter { $0.type == "Text" }
+                    let popups = page.annotations.filter { $0.type == "Popup" }
+                    // If more popups than notes, remove excess (orphaned)
+                    if popups.count > remainingNotes.count {
+                        for popup in popups.suffix(popups.count - remainingNotes.count) {
+                            page.removeAnnotation(popup)
+                        }
+                    }
                     found = true
                     break
                 }

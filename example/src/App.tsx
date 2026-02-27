@@ -696,6 +696,7 @@ function AppContent() {
         pdfUrl1: pick1.pdfUrl,
         pdfUrl2: pick2.pdfUrl,
       });
+      console.log('[Compare] result:', JSON.stringify(result, null, 2));
       setDiffResult(result);
       setCompareTab('target');
       setScreen('compare');

@@ -324,9 +324,7 @@ function AppContent() {
     try {
       const result = await NeuroDoc.addBookmarks({
         pdfUrl,
-        bookmarks: [
-          { title: 'Bookmark Page 1', pageIndex: 0 },
-        ],
+        bookmarks: [{ title: 'Bookmark Page 1', pageIndex: 0 }],
       });
       setPdfUrl(result.pdfUrl);
       Alert.alert('Done', 'Bookmark added to page 1');
@@ -555,7 +553,9 @@ function AppContent() {
       const chosen = sorted.slice(midStart, midStart + 3);
 
       const preview = chosen
-        .map((b: any, i: number) => `${i + 1}. "${b.text}" → "Edited #${i + 1}"`)
+        .map(
+          (b: any, i: number) => `${i + 1}. "${b.text}" → "Edited #${i + 1}"`
+        )
         .join('\n');
 
       Alert.alert('Edit Content', `Will replace:\n${preview}`, [
@@ -651,10 +651,13 @@ function AppContent() {
         inputPath: picked.fileUrl,
       });
       setPdfUrl(result.pdfUrl);
-      const msg = `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`;
-      const warnings = result.warnings.length > 0
-        ? `\nWarnings: ${result.warnings.join(', ')}`
-        : '';
+      const msg = `${result.pageCount} page(s), ${(
+        result.fileSize / 1024
+      ).toFixed(0)} KB`;
+      const warnings =
+        result.warnings.length > 0
+          ? `\nWarnings: ${result.warnings.join(', ')}`
+          : '';
       Alert.alert('DOCX → PDF', msg + warnings);
     } catch (e: any) {
       if (e.code !== 'PICKER_CANCELLED') {
@@ -675,7 +678,9 @@ function AppContent() {
       });
       Alert.alert(
         'PDF → DOCX',
-        `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB, mode: ${result.mode}`
+        `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(
+          0
+        )} KB, mode: ${result.mode}`
       );
       await Share.share({ url: result.docxUrl });
     } catch (e: any) {
@@ -843,7 +848,9 @@ function AppContent() {
   // --- Compare ---
   if (screen === 'compare' && diffResult) {
     const activePdfUrl =
-      compareTab === 'target' ? diffResult.targetPdfUrl : diffResult.sourcePdfUrl;
+      compareTab === 'target'
+        ? diffResult.targetPdfUrl
+        : diffResult.sourcePdfUrl;
     const { totalAdded, totalDeleted, totalChanged } = diffResult;
 
     return (
@@ -861,18 +868,34 @@ function AppContent() {
           {/* Tab switcher */}
           <View style={styles.modeToggle}>
             <TouchableOpacity
-              style={[styles.modeBtn, compareTab === 'source' && styles.modeBtnActive]}
+              style={[
+                styles.modeBtn,
+                compareTab === 'source' && styles.modeBtnActive,
+              ]}
               onPress={() => setCompareTab('source')}
             >
-              <Text style={[styles.modeBtnText, compareTab === 'source' && styles.modeBtnTextActive]}>
+              <Text
+                style={[
+                  styles.modeBtnText,
+                  compareTab === 'source' && styles.modeBtnTextActive,
+                ]}
+              >
                 v1
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.modeBtn, compareTab === 'target' && styles.modeBtnActive]}
+              style={[
+                styles.modeBtn,
+                compareTab === 'target' && styles.modeBtnActive,
+              ]}
               onPress={() => setCompareTab('target')}
             >
-              <Text style={[styles.modeBtnText, compareTab === 'target' && styles.modeBtnTextActive]}>
+              <Text
+                style={[
+                  styles.modeBtnText,
+                  compareTab === 'target' && styles.modeBtnTextActive,
+                ]}
+              >
                 v2
               </Text>
             </TouchableOpacity>
@@ -883,21 +906,15 @@ function AppContent() {
         <View style={styles.diffStatsBar}>
           <View style={styles.diffStat}>
             <View style={[styles.diffDot, { backgroundColor: '#00C853' }]} />
-            <Text style={styles.diffStatText}>
-              +{totalAdded} added
-            </Text>
+            <Text style={styles.diffStatText}>+{totalAdded} added</Text>
           </View>
           <View style={styles.diffStat}>
             <View style={[styles.diffDot, { backgroundColor: '#FF3B30' }]} />
-            <Text style={styles.diffStatText}>
-              -{totalDeleted} deleted
-            </Text>
+            <Text style={styles.diffStatText}>-{totalDeleted} deleted</Text>
           </View>
           <View style={styles.diffStat}>
             <View style={[styles.diffDot, { backgroundColor: '#FF9500' }]} />
-            <Text style={styles.diffStatText}>
-              ~{totalChanged} changed
-            </Text>
+            <Text style={styles.diffStatText}>~{totalChanged} changed</Text>
           </View>
           <Text style={styles.diffTabHint}>
             {compareTab === 'target' ? 'Showing v2 (new)' : 'Showing v1 (old)'}
@@ -908,16 +925,30 @@ function AppContent() {
         <View style={styles.diffLegend}>
           {compareTab === 'target' ? (
             <>
-              <View style={[styles.legendSwatch, { backgroundColor: '#00CC0059' }]} />
+              <View
+                style={[styles.legendSwatch, { backgroundColor: '#00CC0059' }]}
+              />
               <Text style={styles.legendText}>Green = added</Text>
-              <View style={[styles.legendSwatch, { backgroundColor: '#FFAA0059', marginLeft: 12 }]} />
+              <View
+                style={[
+                  styles.legendSwatch,
+                  { backgroundColor: '#FFAA0059', marginLeft: 12 },
+                ]}
+              />
               <Text style={styles.legendText}>Yellow = changed</Text>
             </>
           ) : (
             <>
-              <View style={[styles.legendSwatch, { backgroundColor: '#FF444459' }]} />
+              <View
+                style={[styles.legendSwatch, { backgroundColor: '#FF444459' }]}
+              />
               <Text style={styles.legendText}>Red = deleted</Text>
-              <View style={[styles.legendSwatch, { backgroundColor: '#FFAA0059', marginLeft: 12 }]} />
+              <View
+                style={[
+                  styles.legendSwatch,
+                  { backgroundColor: '#FFAA0059', marginLeft: 12 },
+                ]}
+              />
               <Text style={styles.legendText}>Yellow = changed</Text>
             </>
           )}
@@ -1097,8 +1128,9 @@ function AppContent() {
           onPageChanged={(page, total) => setPageInfo({ page, total })}
           onDocumentLoaded={(total) => setPageInfo({ page: 0, total })}
           onDocumentLoadFailed={(error) => {
-            const isPasswordError =
-              /password|encrypt|protected|security/i.test(error);
+            const isPasswordError = /password|encrypt|protected|security/i.test(
+              error
+            );
             if (isPasswordError) {
               setPasswordInput('');
               setPasswordPrompt(true);
@@ -1282,7 +1314,8 @@ function AppContent() {
               <View key={i} style={styles.listRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.listKey}>
-                    {'  '.repeat(b.level)}{b.title}
+                    {'  '.repeat(b.level)}
+                    {b.title}
                   </Text>
                   <Text style={styles.listValue}>
                     Page {b.pageIndex + 1}

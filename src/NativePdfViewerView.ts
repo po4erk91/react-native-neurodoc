@@ -106,7 +106,7 @@ export interface NativePdfViewerViewProps extends ViewProps {
 
 export type PdfViewerViewType = HostComponent<NativePdfViewerViewProps>;
 
-interface NativeCommands {
+export interface NativeCommands {
   goToPage: (
     viewRef: React.ElementRef<PdfViewerViewType>,
     pageIndex: Int32

@@ -108,13 +108,6 @@ class BookmarkProcessor {
 
     // MARK: - Helpers
 
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
-
     private static func flattenOutline(_ outline: PDFOutline, level: Int, bookmarks: inout [[String: Any]], document: PDFDocument) {
         for i in 0..<outline.numberOfChildren {
             guard let child = outline.child(at: i) else { continue }

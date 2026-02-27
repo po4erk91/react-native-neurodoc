@@ -145,12 +145,4 @@ class FormCreator {
         page.addAnnotation(checkbox)
     }
 
-    // MARK: - Helpers
-
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
 }

@@ -8,7 +8,7 @@ PODS:
   - hermes-engine (0.14.0):
     - hermes-engine/Pre-built (= 0.14.0)
   - hermes-engine/Pre-built (0.14.0)
-  - Neurodoc (0.3.0):
+  - Neurodoc (0.4.0):
     - boost
     - DoubleConversion
     - fast_float
@@ -2823,7 +2823,7 @@ SPEC CHECKSUMS:
   fmt: a40bb5bd0294ea969aaaba240a927bd33d878cdd
   glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
   hermes-engine: 5c97497e09f9fd65e499bd09026d367b96c6d806
-  Neurodoc: 0bd07cdd3c529c3b9f902e847d385092deefda09
+  Neurodoc: 713521fab2f62707483ff9914b735f7a648939d5
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: 2b70c6e3abe00396cefd8913efbf6a2db01a2b36
   RCTRequired: f3540eee8094231581d40c5c6d41b0f170237a81
@@ -2897,6 +2897,6 @@ SPEC CHECKSUMS:
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 7a9f26c70daf0b08d82ec2f862e9a8872442129e
 
-PODFILE CHECKSUM: 3e23582e5b064a40cdae0f8c877524d7fe164a5b
+PODFILE CHECKSUM: 107edffcc0a878bad67aedece98994e49cb6dbab
 
 COCOAPODS: 1.16.2

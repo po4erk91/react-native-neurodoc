@@ -165,7 +165,6 @@ class TextExtractor {
         guard let cgImage = renderPageToImage(page: page) else { return [] }
 
         var blocks: [TextBlock] = []
-        let semaphore = DispatchSemaphore(value: 0)
 
         let request = VNRecognizeTextRequest { request, _ in
             if let observations = request.results as? [VNRecognizedTextObservation] {
@@ -193,7 +192,6 @@ class TextExtractor {
                     ))
                 }
             }
-            semaphore.signal()
         }
 
         request.recognitionLevel = .accurate
@@ -202,40 +200,14 @@ class TextExtractor {
             request.recognitionLanguages = [language]
         }
 
+        // VNImageRequestHandler.perform is synchronous — completion is called before perform returns
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         try? handler.perform([request])
-        semaphore.wait()
 
         return blocks
     }
 
     // MARK: - Helpers
-
-    private static func renderPageToImage(page: PDFPage, scale: CGFloat = 2.0) -> CGImage? {
-        let bounds = page.bounds(for: .mediaBox)
-        let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-
-            ctx.cgContext.saveGState()
-            ctx.cgContext.translateBy(x: 0, y: size.height)
-            ctx.cgContext.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: ctx.cgContext)
-            ctx.cgContext.restoreGState()
-        }
-
-        return image.cgImage
-    }
-
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
 
     private static func buildResult(blocks: [TextBlock], pageWidth: Double, pageHeight: Double, mode: String) -> [String: Any] {
         let blocksArray: [[String: Any]] = blocks.map { block in

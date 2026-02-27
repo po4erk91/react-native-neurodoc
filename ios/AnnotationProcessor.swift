@@ -131,7 +131,7 @@ class AnnotationProcessor {
                 let colorHex = annotation.color.hexString ?? "#000000"
 
                 annotations.append([
-                    "id": "\(pageIdx)_\(bounds.origin.x)_\(bounds.origin.y)_\(type)",
+                    "id": "\(pageIdx)_\(Int(bounds.origin.x.rounded()))_\(Int(bounds.origin.y.rounded()))_\(type)",
                     "type": type,
                     "pageIndex": pageIdx,
                     "color": colorHex,
@@ -171,7 +171,7 @@ class AnnotationProcessor {
                 }
 
                 let bounds = annotation.bounds
-                let id = "\(pageIdx)_\(bounds.origin.x)_\(bounds.origin.y)_\(type)"
+                let id = "\(pageIdx)_\(Int(bounds.origin.x.rounded()))_\(Int(bounds.origin.y.rounded()))_\(type)"
 
                 if id == annotationId {
                     page.removeAnnotation(annotation)
@@ -203,21 +203,4 @@ class AnnotationProcessor {
     }
 
     // MARK: - Helpers
-
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
-}
-
-// MARK: - UIColor hex string
-
-extension UIColor {
-    var hexString: String? {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
-    }
 }

@@ -162,6 +162,8 @@ enum ElementModel: Decodable {
 
 class TemplateProcessor {
 
+    private static let templateRegex = try? NSRegularExpression(pattern: "\\{\\{([^}]+)\\}\\}")
+
     // MARK: - Public API
 
     static func generate(
@@ -835,8 +837,7 @@ class TemplateProcessor {
     // MARK: - Helpers
 
     private static func resolveString(_ template: String, data: [String: Any]) -> String {
-        let pattern = "\\{\\{([^}]+)\\}\\}"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return template }
+        guard let regex = templateRegex else { return template }
 
         var result = template
         let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))

@@ -143,32 +143,6 @@ class OcrProcessor {
 
     // MARK: - Helpers
 
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
-
-    private static func renderPageToImage(page: PDFPage, scale: CGFloat = 2.0) -> CGImage? {
-        let bounds = page.bounds(for: .mediaBox)
-        let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-
-            ctx.cgContext.saveGState()
-            ctx.cgContext.translateBy(x: 0, y: size.height)
-            ctx.cgContext.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: ctx.cgContext)
-            ctx.cgContext.restoreGState()
-        }
-
-        return image.cgImage
-    }
-
     private struct OcrBlock {
         let text: String
         let boundingBox: CGRect // Vision normalized coords (bottom-left origin)
@@ -176,7 +150,6 @@ class OcrProcessor {
 
     private static func performOcrSync(cgImage: CGImage, language: String) -> [OcrBlock] {
         var results: [OcrBlock] = []
-        let semaphore = DispatchSemaphore(value: 0)
 
         let request = VNRecognizeTextRequest { request, _ in
             if let observations = request.results as? [VNRecognizedTextObservation] {
@@ -189,7 +162,6 @@ class OcrProcessor {
                     }
                 }
             }
-            semaphore.signal()
         }
 
         request.recognitionLevel = .accurate
@@ -198,11 +170,9 @@ class OcrProcessor {
             request.recognitionLanguages = [language]
         }
 
+        // VNImageRequestHandler.perform is synchronous — completion is called before perform returns
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         try? handler.perform([request])
-
-        // If the request was synchronous (it usually is for perform), signal may already be done
-        semaphore.wait()
 
         return results
     }

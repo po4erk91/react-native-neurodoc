@@ -2,6 +2,16 @@ import Foundation
 import PDFKit
 
 class FormProcessor {
+
+    private struct WidgetInfo {
+        let fieldName: String
+        let bounds: CGRect
+        let fieldType: PDFAnnotationWidgetSubtype
+        let value: String
+        let font: UIFont
+        let fontColor: UIColor
+    }
+
     static func getFormFields(pdfUrl: String, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
         guard let url = resolveUrl(pdfUrl), let doc = PDFDocument(url: url) else {
             rejecter("FORM_FAILED", "Failed to load PDF", nil)
@@ -80,14 +90,6 @@ class FormProcessor {
         }
 
         // Collect widget info and remove them from pages
-        struct WidgetInfo {
-            let fieldName: String
-            let bounds: CGRect
-            let fieldType: PDFAnnotationWidgetSubtype
-            let value: String
-            let font: UIFont
-            let fontColor: UIColor
-        }
         var widgetsByPage: [Int: [WidgetInfo]] = [:]
 
         for pageIdx in 0..<doc.pageCount {
@@ -233,15 +235,6 @@ class FormProcessor {
             outputDoc.write(to: outputUrl)
             resolver(["pdfUrl": outputUrl.absoluteString])
         }
-    }
-
-    // MARK: - Helpers
-
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
     }
 
 }

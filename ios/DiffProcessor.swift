@@ -274,7 +274,7 @@ class DiffProcessor {
 
     /// Extract text blocks using Vision OCR (for scanned/image PDFs)
     private static func extractOcrBlocks(page: PDFPage) -> [Block] {
-        guard let cgImage = renderPageToCGImage(page: page) else {
+        guard let cgImage = renderPageToImage(page: page) else {
             NSLog("[Neurodoc DiffProcessor] extractOcrBlocks: failed to render page to CGImage")
             return []
         }
@@ -375,25 +375,6 @@ class DiffProcessor {
         }
 
         return blocks
-    }
-
-    /// Render PDF page to CGImage for OCR
-    private static func renderPageToCGImage(page: PDFPage, scale: CGFloat = 2.0) -> CGImage? {
-        let bounds = page.bounds(for: .mediaBox)
-        let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-            ctx.cgContext.saveGState()
-            ctx.cgContext.translateBy(x: 0, y: size.height)
-            ctx.cgContext.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: ctx.cgContext)
-            ctx.cgContext.restoreGState()
-        }
-
-        return image.cgImage
     }
 
     // MARK: - Diff algorithm (Myers / LCS)
@@ -558,12 +539,4 @@ class DiffProcessor {
         }
     }
 
-    // MARK: - URL helper
-
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
 }

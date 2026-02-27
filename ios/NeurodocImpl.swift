@@ -16,13 +16,6 @@ public class NeurodocImpl: NSObject {
         return dir
     }()
 
-    private func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
-
     private func saveTempPdf(_ document: PDFDocument, fileName: String? = nil) -> URL {
         let name = fileName ?? UUID().uuidString
         let url = tempDirectory.appendingPathComponent("\(name).pdf")
@@ -155,12 +148,7 @@ public class NeurodocImpl: NSObject {
             }
 
             let attrs = doc.documentAttributes ?? [:]
-            let fileSize: Int
-            if let data = try? Data(contentsOf: url) {
-                fileSize = data.count
-            } else {
-                fileSize = 0
-            }
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
 
             // Check if signed by looking for signature annotations
             var isSigned = false
@@ -239,13 +227,18 @@ public class NeurodocImpl: NSObject {
 
             let name = fileName.hasSuffix(".pdf") ? String(fileName.dropLast(4)) : fileName
             let outputUrl = tempDirectory.appendingPathComponent("\(name).pdf")
-            if let data = mergedDoc.dataRepresentation() {
-                try? data.write(to: outputUrl)
-            } else {
-                mergedDoc.write(to: outputUrl)
+            guard let data = mergedDoc.dataRepresentation() else {
+                rejecter("MERGE_FAILED", "Failed to serialize merged PDF", nil)
+                return
+            }
+            do {
+                try data.write(to: outputUrl, options: .atomic)
+            } catch {
+                rejecter("MERGE_FAILED", "Failed to write merged PDF: \(error.localizedDescription)", error as NSError)
+                return
             }
 
-            let fileSize = (try? Data(contentsOf: outputUrl))?.count ?? 0
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: outputUrl.path)[.size] as? Int) ?? 0
 
             resolver([
                 "pdfUrl": outputUrl.absoluteString,
@@ -478,13 +471,7 @@ public class NeurodocImpl: NSObject {
                 stampAnnot.border = border
                 stampAnnot.color = .clear
 
-                // Create appearance stream from image
-                if let cgImage = image.cgImage {
-                    let imagePage = PDFPage(image: UIImage(cgImage: cgImage))
-                    // Use PDFAnnotation's direct image approach
-                    stampAnnot.setValue(image, forAnnotationKey: PDFAnnotationKey(rawValue: "/AP"))
-                }
-
+                stampAnnot.setValue(image, forAnnotationKey: PDFAnnotationKey(rawValue: "/AP"))
                 page.addAnnotation(stampAnnot)
             }
 
@@ -834,20 +821,3 @@ private class SaveDocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
     }
 }
 
-// MARK: - UIColor hex extension
-
-extension UIColor {
-    convenience init?(hex: String) {
-        var hexStr = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if hexStr.hasPrefix("#") { hexStr.removeFirst() }
-
-        guard hexStr.count == 6, let rgb = UInt64(hexStr, radix: 16) else { return nil }
-
-        self.init(
-            red: CGFloat((rgb >> 16) & 0xFF) / 255.0,
-            green: CGFloat((rgb >> 8) & 0xFF) / 255.0,
-            blue: CGFloat(rgb & 0xFF) / 255.0,
-            alpha: 1.0
-        )
-    }
-}

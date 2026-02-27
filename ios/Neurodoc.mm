@@ -65,7 +65,7 @@
     if (rawIndexes.has_value()) {
         pageIndexes = [NSMutableArray new];
         auto vec = rawIndexes.value();
-        for (size_t i = 0; i < vec.size(); i++) {
+        for (int i = 0; i < vec.size(); i++) {
             [pageIndexes addObject:@(vec[i])];
         }
     }
@@ -84,7 +84,7 @@
        reject:(RCTPromiseRejectBlock)reject {
     auto lazyUrls = options.pdfUrls();
     NSMutableArray<NSString *> *pdfUrls = [NSMutableArray new];
-    for (size_t i = 0; i < lazyUrls.size(); i++) {
+    for (int i = 0; i < lazyUrls.size(); i++) {
         [pdfUrls addObject:lazyUrls[i]];
     }
     NSString *fileName = options.fileName() ?: @"merged";
@@ -103,10 +103,10 @@
     NSString *pdfUrl = options.pdfUrl();
     auto rawRanges = options.ranges();
     NSMutableArray<NSArray<NSNumber *> *> *ranges = [NSMutableArray new];
-    for (size_t i = 0; i < rawRanges.size(); i++) {
+    for (int i = 0; i < rawRanges.size(); i++) {
         auto range = rawRanges[i];
         NSMutableArray<NSNumber *> *pair = [NSMutableArray new];
-        for (size_t j = 0; j < range.size(); j++) {
+        for (int j = 0; j < range.size(); j++) {
             [pair addObject:@(range[j])];
         }
         [ranges addObject:pair];
@@ -126,7 +126,7 @@
     NSString *pdfUrl = options.pdfUrl();
     auto rawIndexes = options.pageIndexes();
     NSMutableArray<NSNumber *> *pageIndexes = [NSMutableArray new];
-    for (size_t i = 0; i < rawIndexes.size(); i++) {
+    for (int i = 0; i < rawIndexes.size(); i++) {
         [pageIndexes addObject:@(rawIndexes[i])];
     }
 
@@ -144,7 +144,7 @@
     NSString *pdfUrl = options.pdfUrl();
     auto rawOrder = options.order();
     NSMutableArray<NSNumber *> *order = [NSMutableArray new];
-    for (size_t i = 0; i < rawOrder.size(); i++) {
+    for (int i = 0; i < rawOrder.size(); i++) {
         [order addObject:@(rawOrder[i])];
     }
 
@@ -163,7 +163,7 @@
     auto rawAnnotations = options.annotations();
     NSMutableArray<NSDictionary *> *annotations = [NSMutableArray new];
 
-    for (size_t i = 0; i < rawAnnotations.size(); i++) {
+    for (int i = 0; i < rawAnnotations.size(); i++) {
         auto a = rawAnnotations[i];
         NSMutableDictionary *dict = [NSMutableDictionary new];
         dict[@"type"] = a.type();
@@ -180,7 +180,7 @@
         if (rawRects.has_value()) {
             auto rectsVec = rawRects.value();
             NSMutableArray *rects = [NSMutableArray new];
-            for (size_t j = 0; j < rectsVec.size(); j++) {
+            for (int j = 0; j < rectsVec.size(); j++) {
                 auto r = rectsVec[j];
                 [rects addObject:@{
                     @"x": @(r.x()),
@@ -196,10 +196,10 @@
         if (rawPoints.has_value()) {
             auto pointsVec = rawPoints.value();
             NSMutableArray *points = [NSMutableArray new];
-            for (size_t j = 0; j < pointsVec.size(); j++) {
+            for (int j = 0; j < pointsVec.size(); j++) {
                 auto pt = pointsVec[j];
                 NSMutableArray *pair = [NSMutableArray new];
-                for (size_t k = 0; k < pt.size(); k++) {
+                for (int k = 0; k < pt.size(); k++) {
                     [pair addObject:@(pt[k])];
                 }
                 [points addObject:pair];
@@ -260,7 +260,7 @@
 
     auto rawFields = options.fields();
     NSMutableArray<NSDictionary *> *fields = [NSMutableArray new];
-    for (size_t i = 0; i < rawFields.size(); i++) {
+    for (int i = 0; i < rawFields.size(); i++) {
         auto f = rawFields[i];
         NSMutableDictionary *dict = [NSMutableDictionary new];
         dict[@"id"] = f.id_();
@@ -329,7 +329,7 @@
     if (rawIndexes.has_value()) {
         pageIndexes = [NSMutableArray new];
         auto vec = rawIndexes.value();
-        for (size_t i = 0; i < vec.size(); i++) {
+        for (int i = 0; i < vec.size(); i++) {
             [pageIndexes addObject:@(vec[i])];
         }
     }
@@ -358,7 +358,7 @@
     auto rawRedactions = options.redactions();
     NSMutableArray<NSDictionary *> *redactions = [NSMutableArray new];
 
-    for (size_t i = 0; i < rawRedactions.size(); i++) {
+    for (int i = 0; i < rawRedactions.size(); i++) {
         auto r = rawRedactions[i];
         NSMutableDictionary *dict = [NSMutableDictionary new];
         dict[@"pageIndex"] = @(r.pageIndex());
@@ -366,7 +366,7 @@
 
         auto rawRects = r.rects();
         NSMutableArray *rects = [NSMutableArray new];
-        for (size_t j = 0; j < rawRects.size(); j++) {
+        for (int j = 0; j < rawRects.size(); j++) {
             auto rect = rawRects[j];
             [rects addObject:@{
                 @"x": @(rect.x()),
@@ -398,7 +398,7 @@
     auto rawEdits = options.edits();
     NSMutableArray<NSDictionary *> *edits = [NSMutableArray new];
 
-    for (size_t i = 0; i < rawEdits.size(); i++) {
+    for (int i = 0; i < rawEdits.size(); i++) {
         auto e = rawEdits[i];
         NSMutableDictionary *dict = [NSMutableDictionary new];
         dict[@"pageIndex"] = @(e.pageIndex());
@@ -469,7 +469,7 @@
 
     auto rawFields = options.fields();
     NSMutableArray<NSDictionary *> *fields = [NSMutableArray new];
-    for (size_t i = 0; i < rawFields.size(); i++) {
+    for (int i = 0; i < rawFields.size(); i++) {
         auto f = rawFields[i];
         NSMutableDictionary *dict = [NSMutableDictionary new];
         dict[@"name"] = f.name();
@@ -518,8 +518,8 @@
     auto rawBookmarks = options.bookmarks();
     NSMutableArray<NSDictionary *> *bookmarks = [NSMutableArray new];
 
-    for (size_t i = 0; i < rawBookmarks.size(); i++) {
-        auto b = rawBookmarks[(int)i];
+    for (int i = 0; i < rawBookmarks.size(); i++) {
+        auto b = rawBookmarks[i];
         NSMutableDictionary *dict = [NSMutableDictionary new];
         dict[@"title"] = b.title();
         dict[@"pageIndex"] = @(b.pageIndex());
@@ -541,8 +541,8 @@
     NSString *pdfUrl = options.pdfUrl();
     auto rawIndexes = options.indexes();
     NSMutableArray<NSNumber *> *indexes = [NSMutableArray new];
-    for (size_t i = 0; i < rawIndexes.size(); i++) {
-        [indexes addObject:@(rawIndexes[(int)i])];
+    for (int i = 0; i < rawIndexes.size(); i++) {
+        [indexes addObject:@(rawIndexes[i])];
     }
 
     [_impl removeBookmarksWithPdfUrl:pdfUrl

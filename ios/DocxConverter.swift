@@ -1103,10 +1103,9 @@ class DocxConverter {
     }
 
     private static func extractOcrBlocks(page: PDFPage, pageWidth: Double, pageHeight: Double, language: String) -> [TextExtractor.TextBlock] {
-        guard let cgImage = renderPageToCGImage(page: page) else { return [] }
+        guard let cgImage = renderPageToImage(page: page) else { return [] }
 
         var blocks: [TextExtractor.TextBlock] = []
-        let semaphore = DispatchSemaphore(value: 0)
 
         let request = VNRecognizeTextRequest { request, _ in
             if let observations = request.results as? [VNRecognizedTextObservation] {
@@ -1127,7 +1126,6 @@ class DocxConverter {
                     ))
                 }
             }
-            semaphore.signal()
         }
 
         request.recognitionLevel = .accurate
@@ -1138,30 +1136,12 @@ class DocxConverter {
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         try? handler.perform([request])
-        semaphore.wait()
 
         return blocks
     }
 
-    private static func renderPageToCGImage(page: PDFPage, scale: CGFloat = 2.0) -> CGImage? {
-        let bounds = page.bounds(for: .mediaBox)
-        let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-            ctx.cgContext.saveGState()
-            ctx.cgContext.translateBy(x: 0, y: size.height)
-            ctx.cgContext.scaleBy(x: scale, y: -scale)
-            page.draw(with: .mediaBox, to: ctx.cgContext)
-            ctx.cgContext.restoreGState()
-        }
-        return image.cgImage
-    }
-
     private static func renderPageAsImage(page: PDFPage, index: inout Int) -> Data? {
-        guard let cgImage = renderPageToCGImage(page: page, scale: 1.5) else { return nil }
+        guard let cgImage = renderPageToImage(page: page, scale: 1.5) else { return nil }
         let uiImage = UIImage(cgImage: cgImage)
         let data = uiImage.pngData()
         if data != nil { index += 1 }
@@ -1347,13 +1327,6 @@ class DocxConverter {
     }
 
     // MARK: - Common Helpers
-
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
 
     private static func escapeXml(_ text: String) -> String {
         return text

@@ -136,10 +136,4 @@ class ContentEditor {
         let color: UIColor
     }
 
-    private static func resolveUrl(_ urlString: String) -> URL? {
-        if urlString.hasPrefix("file://") {
-            return URL(string: urlString)
-        }
-        return URL(fileURLWithPath: urlString)
-    }
 }

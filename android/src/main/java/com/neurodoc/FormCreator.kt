@@ -34,162 +34,149 @@ object FormCreator {
         promise: Promise
     ) {
         try {
-            val file = resolveFile(pdfUrl)
-            val doc = PDDocument.load(file)
+            val file = PdfUtils.resolveFile(pdfUrl)
+            val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
 
-            // Ensure AcroForm exists
-            var acroForm = doc.documentCatalog.acroForm
-            if (acroForm == null) {
-                acroForm = PDAcroForm(doc)
-                doc.documentCatalog.acroForm = acroForm
+            PDDocument.load(file).use { doc ->
+                // Ensure AcroForm exists
+                var acroForm = doc.documentCatalog.acroForm
+                if (acroForm == null) {
+                    acroForm = PDAcroForm(doc)
+                    doc.documentCatalog.acroForm = acroForm
 
-                // Set default resources with Helvetica font
-                val resources = acroForm.defaultResources
-                    ?: com.tom_roush.pdfbox.pdmodel.PDResources()
-                resources.put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA)
-                acroForm.defaultResources = resources
-            }
-
-            // Group fields by page
-            val fieldsByPage = mutableMapOf<Int, MutableList<Map<String, Any?>>>()
-            for (i in 0 until fields.size()) {
-                val fieldMap = fields.getMap(i) ?: continue
-                val pageIndex = if (fieldMap.hasKey("pageIndex")) fieldMap.getInt("pageIndex") else 0
-                val field = mutableMapOf<String, Any?>()
-                field["name"] = fieldMap.getString("name")
-                field["pageIndex"] = pageIndex
-
-                if (fieldMap.hasKey("boundingBox") && !fieldMap.isNull("boundingBox")) {
-                    val bbox = fieldMap.getMap("boundingBox")!!
-                    field["boundingBox"] = mapOf(
-                        "x" to bbox.getDouble("x"),
-                        "y" to bbox.getDouble("y"),
-                        "width" to bbox.getDouble("width"),
-                        "height" to bbox.getDouble("height")
-                    )
+                    val resources = acroForm.defaultResources
+                        ?: com.tom_roush.pdfbox.pdmodel.PDResources()
+                    resources.put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA)
+                    acroForm.defaultResources = resources
                 }
 
-                field["type"] = if (fieldMap.hasKey("type") && !fieldMap.isNull("type")) fieldMap.getString("type") else "text"
-                field["defaultValue"] = if (fieldMap.hasKey("defaultValue") && !fieldMap.isNull("defaultValue")) fieldMap.getString("defaultValue") else ""
-                field["fontSize"] = if (fieldMap.hasKey("fontSize") && !fieldMap.isNull("fontSize")) fieldMap.getDouble("fontSize") else 0.0
+                // Group fields by page
+                val fieldsByPage = mutableMapOf<Int, MutableList<Map<String, Any?>>>()
+                for (i in 0 until fields.size()) {
+                    val fieldMap = fields.getMap(i) ?: continue
+                    val pageIndex = if (fieldMap.hasKey("pageIndex")) fieldMap.getInt("pageIndex") else 0
+                    val field = mutableMapOf<String, Any?>()
+                    field["name"] = fieldMap.getString("name")
+                    field["pageIndex"] = pageIndex
 
-                fieldsByPage.getOrPut(pageIndex) { mutableListOf() }.add(field)
-            }
+                    if (fieldMap.hasKey("boundingBox") && !fieldMap.isNull("boundingBox")) {
+                        val bbox = fieldMap.getMap("boundingBox") ?: continue
+                        field["boundingBox"] = mapOf(
+                            "x" to bbox.getDouble("x"),
+                            "y" to bbox.getDouble("y"),
+                            "width" to bbox.getDouble("width"),
+                            "height" to bbox.getDouble("height")
+                        )
+                    }
 
-            // Process each page
-            for ((pageIndex, pageFields) in fieldsByPage) {
-                if (pageIndex < 0 || pageIndex >= doc.numberOfPages) continue
-                val page = doc.getPage(pageIndex)
-                val mediaBox = page.mediaBox
+                    field["type"] = if (fieldMap.hasKey("type") && !fieldMap.isNull("type")) fieldMap.getString("type") else "text"
+                    field["defaultValue"] = if (fieldMap.hasKey("defaultValue") && !fieldMap.isNull("defaultValue")) fieldMap.getString("defaultValue") else ""
+                    field["fontSize"] = if (fieldMap.hasKey("fontSize") && !fieldMap.isNull("fontSize")) fieldMap.getDouble("fontSize") else 0.0
 
-                // Remove original text by parsing and rewriting the content stream
-                // (white-rectangle approach fails on non-white backgrounds)
-                if (removeOriginalText) {
-                    val regions = pageFields.mapNotNull { field ->
-                        val bbox = field["boundingBox"] as? Map<*, *> ?: return@mapNotNull null
+                    fieldsByPage.getOrPut(pageIndex) { mutableListOf() }.add(field)
+                }
+
+                // Process each page
+                for ((pageIndex, pageFields) in fieldsByPage) {
+                    if (pageIndex < 0 || pageIndex >= doc.numberOfPages) continue
+                    val page = doc.getPage(pageIndex)
+                    val mediaBox = page.mediaBox
+
+                    if (removeOriginalText) {
+                        val regions = pageFields.mapNotNull { field ->
+                            val bbox = field["boundingBox"] as? Map<*, *> ?: return@mapNotNull null
+                            val nx = (bbox["x"] as? Double)?.toFloat() ?: 0f
+                            val ny = (bbox["y"] as? Double)?.toFloat() ?: 0f
+                            val nw = (bbox["width"] as? Double)?.toFloat() ?: 0f
+                            val nh = (bbox["height"] as? Double)?.toFloat() ?: 0f
+                            floatArrayOf(
+                                nx * mediaBox.width,
+                                mediaBox.height * (1f - ny - nh),
+                                nw * mediaBox.width,
+                                nh * mediaBox.height
+                            )
+                        }
+
+                        val allTokens = mutableListOf<Any>()
+                        val parser = PDFStreamParser(page)
+                        try {
+                            var token = parser.parseNextToken()
+                            while (token != null) {
+                                allTokens.add(token)
+                                token = parser.parseNextToken()
+                            }
+                        } catch (_: Exception) {}
+
+                        val filtered = filterTextTokens(allTokens, regions)
+
+                        val baos = ByteArrayOutputStream()
+                        val writer = ContentStreamWriter(baos)
+                        writer.writeTokens(filtered)
+
+                        val cosStream = doc.document.createCOSStream()
+                        cosStream.createOutputStream().use { os -> os.write(baos.toByteArray()) }
+                        page.cosObject.setItem(COSName.CONTENTS, cosStream)
+
+                        val pageResources = page.resources
+                        if (pageResources != null) {
+                            for (xName in pageResources.xObjectNames) {
+                                try {
+                                    val xObj = pageResources.getXObject(xName)
+                                    if (xObj is PDFormXObject) {
+                                        val xTokens = mutableListOf<Any>()
+                                        val xParser = PDFStreamParser(xObj)
+                                        try {
+                                            var t = xParser.parseNextToken()
+                                            while (t != null) { xTokens.add(t); t = xParser.parseNextToken() }
+                                        } catch (_: Exception) {}
+
+                                        val xFiltered = filterTextTokens(xTokens, regions)
+
+                                        if (xTokens.size != xFiltered.size) {
+                                            val xBaos = ByteArrayOutputStream()
+                                            ContentStreamWriter(xBaos).writeTokens(xFiltered)
+                                            (xObj.cosObject as? COSStream)?.createOutputStream()?.use { os ->
+                                                os.write(xBaos.toByteArray())
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("FormCreator", "XObject processing error: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+
+                    // Add form fields
+                    for (field in pageFields) {
+                        val name = field["name"] as? String ?: continue
+                        val bbox = field["boundingBox"] as? Map<*, *> ?: continue
+                        val type = (field["type"] as? String) ?: "text"
+                        val defaultValue = (field["defaultValue"] as? String) ?: ""
                         val nx = (bbox["x"] as? Double)?.toFloat() ?: 0f
                         val ny = (bbox["y"] as? Double)?.toFloat() ?: 0f
                         val nw = (bbox["width"] as? Double)?.toFloat() ?: 0f
                         val nh = (bbox["height"] as? Double)?.toFloat() ?: 0f
-                        floatArrayOf(
-                            nx * mediaBox.width,
-                            mediaBox.height * (1f - ny - nh),
-                            nw * mediaBox.width,
-                            nh * mediaBox.height
-                        )
-                    }
 
-                    val allTokens = mutableListOf<Any>()
-                    val parser = PDFStreamParser(page)
-                    try {
-                        var token = parser.parseNextToken()
-                        while (token != null) {
-                            allTokens.add(token)
-                            token = parser.parseNextToken()
-                        }
-                    } catch (_: Exception) {}
+                        val pdfH_tmp = nh * mediaBox.height
+                        val fontSize = (pdfH_tmp * 0.75f).coerceAtLeast(4f)
 
-                    val filtered = filterTextTokens(allTokens, regions)
+                        val pdfX = nx * mediaBox.width
+                        val pdfY = mediaBox.height - ny * mediaBox.height - nh * mediaBox.height
+                        val pdfW = nw * mediaBox.width
+                        val pdfH = nh * mediaBox.height
 
-                    val baos = ByteArrayOutputStream()
-                    val writer = ContentStreamWriter(baos)
-                    writer.writeTokens(filtered)
+                        val rect = PDRectangle(pdfX, pdfY, pdfW, pdfH)
 
-                    val cosStream = doc.document.createCOSStream()
-                    cosStream.createOutputStream().use { os -> os.write(baos.toByteArray()) }
-                    page.cosObject.setItem(COSName.CONTENTS, cosStream)
-
-                    Log.d("FormCreator", "Page $pageIndex: ${allTokens.size} tokens -> ${filtered.size} filtered (removed ${allTokens.size - filtered.size})")
-
-                    // Also filter text inside Form XObjects — template PDFs often
-                    // store all visible content inside an XObject referenced via Do.
-                    val pageResources = page.resources
-                    if (pageResources != null) {
-                        for (xName in pageResources.xObjectNames) {
-                            try {
-                                val xObj = pageResources.getXObject(xName)
-                                if (xObj is PDFormXObject) {
-                                    val xTokens = mutableListOf<Any>()
-                                    val xParser = PDFStreamParser(xObj)
-                                    try {
-                                        var t = xParser.parseNextToken()
-                                        while (t != null) { xTokens.add(t); t = xParser.parseNextToken() }
-                                    } catch (_: Exception) {}
-
-                                    Log.d("FormCreator", "  XObject '$xName': ${xTokens.size} tokens")
-                                    val xFiltered = filterTextTokens(xTokens, regions)
-                                    val removed = xTokens.size - xFiltered.size
-                                    Log.d("FormCreator", "  XObject '$xName': removed $removed tokens")
-
-                                    if (removed > 0) {
-                                        val xBaos = ByteArrayOutputStream()
-                                        ContentStreamWriter(xBaos).writeTokens(xFiltered)
-                                        (xObj.cosObject as? COSStream)?.createOutputStream()?.use { os ->
-                                            os.write(xBaos.toByteArray())
-                                        }
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.e("FormCreator", "XObject processing error: ${e.message}")
-                            }
+                        when (type) {
+                            "checkbox" -> addCheckboxField(page, acroForm, name, rect, defaultValue)
+                            else -> addTextField(page, acroForm, name, rect, defaultValue, fontSize)
                         }
                     }
                 }
 
-                // Add form fields
-                for (field in pageFields) {
-                    val name = field["name"] as? String ?: continue
-                    val bbox = field["boundingBox"] as? Map<*, *> ?: continue
-                    val type = (field["type"] as? String) ?: "text"
-                    val defaultValue = (field["defaultValue"] as? String) ?: ""
-                    val nx = (bbox["x"] as? Double)?.toFloat() ?: 0f
-                    val ny = (bbox["y"] as? Double)?.toFloat() ?: 0f
-                    val nw = (bbox["width"] as? Double)?.toFloat() ?: 0f
-                    val nh = (bbox["height"] as? Double)?.toFloat() ?: 0f
-
-                    // Always compute fontSize from widget height to prevent clipping.
-                    // The JS-side fontSize reflects the ORIGINAL text size, but the
-                    // form widget height (from bounding-box) may be smaller.
-                    val pdfH_tmp = nh * mediaBox.height
-                    var fontSize = (pdfH_tmp * 0.75f).coerceAtLeast(4f)  // 75% of box height
-
-                    val pdfX = nx * mediaBox.width
-                    val pdfY = mediaBox.height - ny * mediaBox.height - nh * mediaBox.height
-                    val pdfW = nw * mediaBox.width
-                    val pdfH = nh * mediaBox.height
-
-                    val rect = PDRectangle(pdfX, pdfY, pdfW, pdfH)
-
-                    when (type) {
-                        "checkbox" -> addCheckboxField(doc, page, acroForm, name, rect, defaultValue)
-                        else -> addTextField(doc, page, acroForm, name, rect, defaultValue, fontSize)
-                    }
-                }
+                doc.save(outputFile)
             }
-
-            val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
-            doc.save(outputFile)
-            doc.close()
 
             promise.resolve(WritableNativeMap().apply {
                 putString("pdfUrl", "file://${outputFile.absolutePath}")
@@ -200,7 +187,6 @@ object FormCreator {
     }
 
     private fun addTextField(
-        doc: PDDocument,
         page: com.tom_roush.pdfbox.pdmodel.PDPage,
         acroForm: PDAcroForm,
         name: String,
@@ -210,16 +196,12 @@ object FormCreator {
     ) {
         val textField = PDTextField(acroForm)
         textField.partialName = name
-
-        // Default appearance string
         textField.defaultAppearance = "/Helv $fontSize Tf 0 0 0 rg"
 
-        // Create widget annotation
         val widget = PDAnnotationWidget()
         widget.rectangle = rect
         widget.page = page
 
-        // Border
         val border = PDBorderStyleDictionary()
         border.width = 0.5f
         widget.borderStyle = border
@@ -228,7 +210,6 @@ object FormCreator {
         page.annotations.add(widget)
         acroForm.fields.add(textField)
 
-        // Set value after widget is attached
         if (defaultValue.isNotEmpty()) {
             try {
                 textField.value = defaultValue
@@ -239,7 +220,6 @@ object FormCreator {
     }
 
     private fun addCheckboxField(
-        doc: PDDocument,
         page: com.tom_roush.pdfbox.pdmodel.PDPage,
         acroForm: PDAcroForm,
         name: String,
@@ -269,14 +249,9 @@ object FormCreator {
         }
     }
 
-    // MARK: - Content stream text removal (same logic as ContentEditor)
+    // region Content stream text removal
 
-    private fun filterTextTokens(tokens: List<Any>, regions: List<FloatArray>, tag: String = "FormCreator"): List<Any> {
-        for ((idx, r) in regions.withIndex()) {
-            Log.d(tag, "  Region $idx: x=${r[0]} y=${r[1]} w=${r[2]} h=${r[3]}")
-        }
-
-        // CTM (a, b, c, d, e, f) — identity to start
+    private fun filterTextTokens(tokens: List<Any>, regions: List<FloatArray>): List<Any> {
         var ctmA = 1f; var ctmB = 0f; var ctmC = 0f
         var ctmD = 1f; var ctmE = 0f; var ctmF = 0f
         data class CtmSnap(val a: Float, val b: Float, val c: Float, val d: Float, val e: Float, val f: Float)
@@ -295,19 +270,12 @@ object FormCreator {
 
             if (op == "'" || op == "\"") { tlmY -= textLeading; tmX = tlmX; tmY = tlmY }
 
-            // Map through CTM to get page coordinates
             val pageX = tmX * ctmA + tmY * ctmC + ctmE
             val pageY = tmX * ctmB + tmY * ctmD + ctmF
 
             val skip = when (op) {
                 "Tj", "TJ", "'", "\"" -> regions.any { r -> isInRegion(pageX, pageY, r) }
                 else -> false
-            }
-
-            // Log every text-show operator for debugging
-            if (op == "Tj" || op == "TJ" || op == "'" || op == "\"") {
-                val preview = if (pending.isNotEmpty()) pending.last().toString().take(40) else "?"
-                Log.d(tag, "  $op at page(${pageX}, ${pageY}) tm(${tmX}, ${tmY}) ctm(${ctmE}, ${ctmF}) skip=$skip text='$preview'")
             }
 
             when (op) {
@@ -356,10 +324,5 @@ object FormCreator {
 
     private fun num(obj: Any?): Float = (obj as? COSNumber)?.floatValue() ?: 0f
 
-    // MARK: - Helpers
-
-    private fun resolveFile(urlString: String): File {
-        val path = if (urlString.startsWith("file://")) urlString.removePrefix("file://") else urlString
-        return File(path)
-    }
+    // endregion
 }

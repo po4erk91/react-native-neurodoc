@@ -152,7 +152,7 @@ object TemplateProcessor {
         // Background
         if (ctx.bgColor.isNotEmpty() && ctx.bgColor != "null") {
             val rgb = parseColor(ctx.bgColor)
-            cs.setNonStrokingColor(rgb[0].toInt(), rgb[1].toInt(), rgb[2].toInt())
+            cs.setNonStrokingColor(rgb[0], rgb[1], rgb[2])
             cs.addRect(0f, 0f, ctx.pageWidth, ctx.pageHeight)
             cs.fill()
         }
@@ -228,7 +228,7 @@ object TemplateProcessor {
         ensureSpace(textHeight + marginBot, ctx)
 
         val cs = ctx.contentStream ?: return
-        cs.setNonStrokingColor(color[0].toInt(), color[1].toInt(), color[2].toInt())
+        cs.setNonStrokingColor(color[0], color[1], color[2])
 
         for ((lineIdx, line) in lines.withIndex()) {
             val textWidth = font.getStringWidth(line) / 1000 * fontSize
@@ -292,7 +292,7 @@ object TemplateProcessor {
         ensureSpace(thickness + marginBot, ctx)
 
         val cs = ctx.contentStream ?: return
-        cs.setStrokingColor(color[0].toInt(), color[1].toInt(), color[2].toInt())
+        cs.setStrokingColor(color[0], color[1], color[2])
         cs.setLineWidth(thickness)
         val pdfY = toPdfY(ctx, ctx.cursorY, thickness / 2)
         cs.moveTo(ctx.contentLeft, pdfY)
@@ -325,7 +325,7 @@ object TemplateProcessor {
         val fillColor = el.optString("fillColor", "")
         if (fillColor.isNotEmpty() && fillColor != "null") {
             val rgb = parseColor(fillColor)
-            cs.setNonStrokingColor(rgb[0].toInt(), rgb[1].toInt(), rgb[2].toInt())
+            cs.setNonStrokingColor(rgb[0], rgb[1], rgb[2])
             cs.addRect(ctx.contentLeft, pdfY, w, h)
             cs.fill()
         }
@@ -333,7 +333,7 @@ object TemplateProcessor {
         val borderColor = el.optString("borderColor", "")
         if (borderColor.isNotEmpty() && borderColor != "null") {
             val rgb = parseColor(borderColor)
-            cs.setStrokingColor(rgb[0].toInt(), rgb[1].toInt(), rgb[2].toInt())
+            cs.setStrokingColor(rgb[0], rgb[1], rgb[2])
             cs.setLineWidth(el.optDouble("borderWidth", 1.0).toFloat())
             cs.addRect(ctx.contentLeft, pdfY, w, h)
             cs.stroke()
@@ -432,7 +432,7 @@ object TemplateProcessor {
             val pdfY = toPdfY(ctx, cursorY, headerRowH)
 
             // Header background
-            cs.setNonStrokingColor(240, 240, 240)
+            cs.setNonStrokingColor(240/255f, 240/255f, 240/255f)
             cs.addRect(ctx.contentLeft, pdfY, ctx.contentWidth, headerRowH)
             cs.fill()
 
@@ -449,7 +449,7 @@ object TemplateProcessor {
                     else -> colX + 4
                 }
 
-                cs.setNonStrokingColor(headerFontColor[0].toInt(), headerFontColor[1].toInt(), headerFontColor[2].toInt())
+                cs.setNonStrokingColor(headerFontColor[0], headerFontColor[1], headerFontColor[2])
                 cs.beginText()
                 cs.setFont(headerFont, headerFontSize)
                 cs.newLineAtOffset(x, pdfY + rowPadding)
@@ -460,7 +460,7 @@ object TemplateProcessor {
             }
 
             if (showGrid) {
-                cs.setStrokingColor(gridColor[0].toInt(), gridColor[1].toInt(), gridColor[2].toInt())
+                cs.setStrokingColor(gridColor[0], gridColor[1], gridColor[2])
                 cs.setLineWidth(0.5f)
                 cs.moveTo(ctx.contentLeft, pdfY)
                 cs.lineTo(ctx.contentLeft + ctx.contentWidth, pdfY)
@@ -490,7 +490,7 @@ object TemplateProcessor {
             // Stripe
             if (stripeColorStr.isNotEmpty() && stripeColorStr != "null" && rowIdx % 2 == 1) {
                 val stripe = parseColor(stripeColorStr)
-                cs.setNonStrokingColor(stripe[0].toInt(), stripe[1].toInt(), stripe[2].toInt())
+                cs.setNonStrokingColor(stripe[0], stripe[1], stripe[2])
                 cs.addRect(ctx.contentLeft, pdfY, ctx.contentWidth, rowHeight)
                 cs.fill()
             }
@@ -510,7 +510,7 @@ object TemplateProcessor {
                     else -> colX + 4
                 }
 
-                cs.setNonStrokingColor(bodyFontColor[0].toInt(), bodyFontColor[1].toInt(), bodyFontColor[2].toInt())
+                cs.setNonStrokingColor(bodyFontColor[0], bodyFontColor[1], bodyFontColor[2])
                 cs.beginText()
                 cs.setFont(bodyFont, bodyFontSize)
                 cs.newLineAtOffset(x, pdfY + rowPadding)
@@ -522,7 +522,7 @@ object TemplateProcessor {
 
             // Grid line
             if (showGrid) {
-                cs.setStrokingColor(gridColor[0].toInt(), gridColor[1].toInt(), gridColor[2].toInt())
+                cs.setStrokingColor(gridColor[0], gridColor[1], gridColor[2])
                 cs.setLineWidth(0.5f)
                 cs.moveTo(ctx.contentLeft, pdfY)
                 cs.lineTo(ctx.contentLeft + ctx.contentWidth, pdfY)
@@ -570,7 +570,7 @@ object TemplateProcessor {
             val pdfY = toPdfY(ctx, ctx.cursorY, labelFontSize)
 
             // Label
-            cs.setNonStrokingColor(labelColor[0].toInt(), labelColor[1].toInt(), labelColor[2].toInt())
+            cs.setNonStrokingColor(labelColor[0], labelColor[1], labelColor[2])
             cs.beginText()
             cs.setFont(labelFont, labelFontSize)
             cs.newLineAtOffset(ctx.contentLeft, pdfY)
@@ -579,7 +579,7 @@ object TemplateProcessor {
 
             // Value
             val labelWidth = labelFont.getStringWidth(label) / 1000 * labelFontSize
-            cs.setNonStrokingColor(valueColor[0].toInt(), valueColor[1].toInt(), valueColor[2].toInt())
+            cs.setNonStrokingColor(valueColor[0], valueColor[1], valueColor[2])
             cs.beginText()
             cs.setFont(valueFont, valueFontSize)
             cs.newLineAtOffset(ctx.contentLeft + labelWidth + gap, pdfY)
@@ -619,7 +619,7 @@ object TemplateProcessor {
                 val lines = wrapText(content, font, fontSize, maxW)
                 val lineHeight = fontSize * 1.2f
 
-                cs.setNonStrokingColor(color[0].toInt(), color[1].toInt(), color[2].toInt())
+                cs.setNonStrokingColor(color[0], color[1], color[2])
 
                 for ((lineIdx, line) in lines.withIndex()) {
                     val textWidth = font.getStringWidth(line) / 1000 * fontSize
@@ -662,7 +662,7 @@ object TemplateProcessor {
             "line" -> {
                 val thickness = el.optDouble("thickness", 1.0).toFloat()
                 val color = parseColor(el.optString("color", "#CCCCCC"))
-                cs.setStrokingColor(color[0].toInt(), color[1].toInt(), color[2].toInt())
+                cs.setStrokingColor(color[0], color[1], color[2])
                 cs.setLineWidth(thickness)
                 val pdfY = toPdfY(ctx, y, thickness / 2)
                 cs.moveTo(x, pdfY)
@@ -678,7 +678,7 @@ object TemplateProcessor {
                 val fillColor = el.optString("fillColor", "")
                 if (fillColor.isNotEmpty() && fillColor != "null") {
                     val rgb = parseColor(fillColor)
-                    cs.setNonStrokingColor(rgb[0].toInt(), rgb[1].toInt(), rgb[2].toInt())
+                    cs.setNonStrokingColor(rgb[0], rgb[1], rgb[2])
                     cs.addRect(x, pdfY, w, h)
                     cs.fill()
                 }
@@ -686,7 +686,7 @@ object TemplateProcessor {
                 val borderColor = el.optString("borderColor", "")
                 if (borderColor.isNotEmpty() && borderColor != "null") {
                     val rgb = parseColor(borderColor)
-                    cs.setStrokingColor(rgb[0].toInt(), rgb[1].toInt(), rgb[2].toInt())
+                    cs.setStrokingColor(rgb[0], rgb[1], rgb[2])
                     cs.setLineWidth(el.optDouble("borderWidth", 1.0).toFloat())
                     cs.addRect(x, pdfY, w, h)
                     cs.stroke()
@@ -891,9 +891,9 @@ object TemplateProcessor {
         return try {
             val colorInt = cleanHex.toLong(16)
             floatArrayOf(
-                ((colorInt shr 16) and 0xFF).toFloat(),
-                ((colorInt shr 8) and 0xFF).toFloat(),
-                (colorInt and 0xFF).toFloat()
+                ((colorInt shr 16) and 0xFF).toFloat() / 255f,
+                ((colorInt shr 8) and 0xFF).toFloat() / 255f,
+                (colorInt and 0xFF).toFloat() / 255f
             )
         } catch (_: Exception) {
             floatArrayOf(0f, 0f, 0f)

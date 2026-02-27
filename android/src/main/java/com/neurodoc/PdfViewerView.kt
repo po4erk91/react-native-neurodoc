@@ -37,7 +37,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactContext
-import com.facebook.react.uimanager.events.RCTEventEmitter
+import com.facebook.react.uimanager.UIManagerHelper
+import com.facebook.react.uimanager.events.RCTModernEventEmitter
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
@@ -928,8 +929,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putInt("pageCount", pageCount)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onPageChanged", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onPageChanged", event)
     }
 
     private fun emitDocumentLoaded(pageCount: Int) {
@@ -937,8 +938,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putInt("pageCount", pageCount)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onDocumentLoaded", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onDocumentLoaded", event)
     }
 
     private fun emitDocumentLoadFailed(error: String) {
@@ -946,8 +947,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putString("error", error)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onDocumentLoadFailed", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onDocumentLoadFailed", event)
     }
 
     private fun emitLongPress(pageIndex: Int, x: Double, y: Double) {
@@ -957,8 +958,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putDouble("y", y)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onLongPress", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onLongPress", event)
     }
 
     fun emitOverlayTap(overlayId: String, pageIndex: Int) {
@@ -967,8 +968,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putInt("pageIndex", pageIndex)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onOverlayTap", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onOverlayTap", event)
     }
 
     fun emitTap(pageIndex: Int, x: Double, y: Double) {
@@ -978,8 +979,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putDouble("y", y)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onTap", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onTap", event)
     }
 
     fun emitOverlayMoved(overlayId: String, x: Double, y: Double) {
@@ -989,8 +990,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putDouble("y", y)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onOverlayMoved", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onOverlayMoved", event)
     }
 
     fun emitOverlayResized(overlayId: String, x: Double, y: Double, width: Double, height: Double) {
@@ -1002,8 +1003,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putDouble("height", height)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onOverlayResized", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onOverlayResized", event)
     }
 
     // MARK: - Grid: PDF Manipulation
@@ -1181,7 +1182,7 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
                     val drawY = (pageSize.height - drawH) / 2
 
                     val cs = PDPageContentStream(doc, newPage)
-                    cs.setNonStrokingColor(255, 255, 255)
+                    cs.setNonStrokingColor(1f, 1f, 1f)
                     cs.addRect(0f, 0f, pageSize.width, pageSize.height)
                     cs.fill()
                     cs.drawImage(pdImage, drawX, drawY, drawW, drawH)
@@ -1290,8 +1291,8 @@ class PdfViewerView(context: Context) : FrameLayout(context) {
             putInt("pageCount", pageCount)
         }
         val reactContext = context as? ReactContext ?: return
-        reactContext.getJSModule(RCTEventEmitter::class.java)
-            .receiveEvent(id, "onDocumentChanged", event)
+        reactContext.getJSModule(RCTModernEventEmitter::class.java)
+            .receiveEvent(UIManagerHelper.getSurfaceId(this), id, "onDocumentChanged", event)
     }
 
     private fun closeRenderer() {

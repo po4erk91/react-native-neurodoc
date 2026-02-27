@@ -17,114 +17,107 @@ import java.util.UUID
 object BookmarkProcessor {
 
     fun getBookmarks(pdfUrl: String, promise: Promise) {
-        val file = resolveFile(pdfUrl)
-        val doc = PDDocument.load(file)
-
-        val bookmarks = WritableNativeArray()
-        val outline = doc.documentCatalog.documentOutline
-
-        if (outline != null) {
-            flattenOutline(outline, 0, bookmarks, doc)
+        try {
+            val file = PdfUtils.resolveFile(pdfUrl)
+            PDDocument.load(file).use { doc ->
+                val bookmarks = WritableNativeArray()
+                val outline = doc.documentCatalog.documentOutline
+                if (outline != null) {
+                    flattenOutline(outline, 0, bookmarks, doc)
+                }
+                promise.resolve(WritableNativeMap().apply {
+                    putArray("bookmarks", bookmarks)
+                })
+            }
+        } catch (e: Exception) {
+            promise.reject("BOOKMARK_FAILED", e.message, e)
         }
-
-        doc.close()
-
-        promise.resolve(WritableNativeMap().apply {
-            putArray("bookmarks", bookmarks)
-        })
     }
 
     fun addBookmarks(pdfUrl: String, bookmarksArray: ReadableArray, tempDir: File, promise: Promise) {
-        val file = resolveFile(pdfUrl)
-        val doc = PDDocument.load(file)
-
-        var outline = doc.documentCatalog.documentOutline
-        if (outline == null) {
-            outline = PDDocumentOutline()
-            doc.documentCatalog.documentOutline = outline
-        }
-
-        // Build flat list of existing nodes for parentIndex resolution
-        val existingNodes = mutableListOf<PDOutlineItem>()
-        flattenOutlineNodes(outline, existingNodes)
-
-        for (i in 0 until bookmarksArray.size()) {
-            val bm = bookmarksArray.getMap(i) ?: continue
-            val title = bm.getString("title") ?: continue
-            val pageIndex = bm.getInt("pageIndex")
-
-            if (pageIndex < 0 || pageIndex >= doc.numberOfPages) continue
-
-            val page = doc.getPage(pageIndex)
-            val dest = PDPageFitWidthDestination()
-            dest.page = page
-
-            val item = PDOutlineItem()
-            item.title = title
-            item.destination = dest
-
-            val hasParent = bm.hasKey("parentIndex") && !bm.isNull("parentIndex")
-            if (hasParent) {
-                val parentIndex = bm.getInt("parentIndex")
-                if (parentIndex in existingNodes.indices) {
-                    existingNodes[parentIndex].addLast(item)
-                } else {
-                    outline.addLast(item)
+        try {
+            val file = PdfUtils.resolveFile(pdfUrl)
+            val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
+            PDDocument.load(file).use { doc ->
+                var outline = doc.documentCatalog.documentOutline
+                if (outline == null) {
+                    outline = PDDocumentOutline()
+                    doc.documentCatalog.documentOutline = outline
                 }
-            } else {
-                outline.addLast(item)
+
+                val existingNodes = mutableListOf<PDOutlineItem>()
+                flattenOutlineNodes(outline, existingNodes)
+
+                for (i in 0 until bookmarksArray.size()) {
+                    val bm = bookmarksArray.getMap(i) ?: continue
+                    val title = bm.getString("title") ?: continue
+                    val pageIndex = bm.getInt("pageIndex")
+
+                    if (pageIndex < 0 || pageIndex >= doc.numberOfPages) continue
+
+                    val page = doc.getPage(pageIndex)
+                    val dest = PDPageFitWidthDestination()
+                    dest.page = page
+
+                    val item = PDOutlineItem()
+                    item.title = title
+                    item.destination = dest
+
+                    val hasParent = bm.hasKey("parentIndex") && !bm.isNull("parentIndex")
+                    if (hasParent) {
+                        val parentIndex = bm.getInt("parentIndex")
+                        if (parentIndex in existingNodes.indices) {
+                            existingNodes[parentIndex].addLast(item)
+                        } else {
+                            outline.addLast(item)
+                        }
+                    } else {
+                        outline.addLast(item)
+                    }
+
+                    existingNodes.add(item)
+                }
+
+                doc.save(outputFile)
             }
-
-            existingNodes.add(item)
+            promise.resolve(WritableNativeMap().apply {
+                putString("pdfUrl", "file://${outputFile.absolutePath}")
+            })
+        } catch (e: Exception) {
+            promise.reject("BOOKMARK_FAILED", e.message, e)
         }
-
-        val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
-        doc.save(outputFile)
-        doc.close()
-
-        promise.resolve(WritableNativeMap().apply {
-            putString("pdfUrl", "file://${outputFile.absolutePath}")
-        })
     }
 
     fun removeBookmarks(pdfUrl: String, indexesArray: ReadableArray, tempDir: File, promise: Promise) {
-        val file = resolveFile(pdfUrl)
-        val doc = PDDocument.load(file)
+        try {
+            val file = PdfUtils.resolveFile(pdfUrl)
+            val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
+            PDDocument.load(file).use { doc ->
+                val outline = doc.documentCatalog.documentOutline
+                if (outline != null) {
+                    val nodes = mutableListOf<PDOutlineItem>()
+                    flattenOutlineNodes(outline, nodes)
 
-        val outline = doc.documentCatalog.documentOutline
-        if (outline != null) {
-            val nodes = mutableListOf<PDOutlineItem>()
-            flattenOutlineNodes(outline, nodes)
+                    val indexes = (0 until indexesArray.size()).map { indexesArray.getInt(it) }.toSet()
 
-            val indexes = (0 until indexesArray.size()).map { indexesArray.getInt(it) }.toSet()
-
-            // Remove in reverse order to preserve indexes
-            for (idx in indexes.sortedDescending()) {
-                if (idx in nodes.indices) {
-                    removeOutlineItem(nodes[idx])
+                    for (idx in indexes.sortedDescending()) {
+                        if (idx in nodes.indices) {
+                            removeOutlineItem(nodes[idx])
+                        }
+                    }
                 }
+
+                doc.save(outputFile)
             }
+            promise.resolve(WritableNativeMap().apply {
+                putString("pdfUrl", "file://${outputFile.absolutePath}")
+            })
+        } catch (e: Exception) {
+            promise.reject("BOOKMARK_FAILED", e.message, e)
         }
-
-        val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
-        doc.save(outputFile)
-        doc.close()
-
-        promise.resolve(WritableNativeMap().apply {
-            putString("pdfUrl", "file://${outputFile.absolutePath}")
-        })
     }
 
-    // MARK: - Helpers
-
-    private fun resolveFile(urlString: String): File {
-        val path = if (urlString.startsWith("file://")) {
-            urlString.removePrefix("file://")
-        } else {
-            urlString
-        }
-        return File(path)
-    }
+    // region Helpers
 
     private fun flattenOutline(outline: PDDocumentOutline, level: Int, result: WritableNativeArray, doc: PDDocument) {
         var item = outline.firstChild
@@ -207,7 +200,6 @@ object BookmarkProcessor {
                     dest.pageNumber
                 }
             } else {
-                // Try to resolve action-based destinations
                 val action = item.action
                 if (action != null) {
                     val d = action.cosObject.getDictionaryObject(COSName.D)
@@ -226,8 +218,6 @@ object BookmarkProcessor {
     }
 
     private fun removeOutlineItem(item: PDOutlineItem) {
-        // PDFBox outline items are a linked list stored in COSDictionary
-        // We manipulate Prev/Next/First/Last/Parent pointers via COS layer
         val cosDict = item.cosObject
         val parentRef = cosDict.getDictionaryObject(COSName.PARENT) ?: return
         val parentDict = parentRef as? COSDictionary ?: return
@@ -255,17 +245,17 @@ object BookmarkProcessor {
             }
         }
 
-        // If this was the only child
         if (prevItem == null && nextItem == null) {
             parentDict.removeItem(COSName.getPDFName("First"))
             parentDict.removeItem(COSName.getPDFName("Last"))
         }
 
-        // Update Count
         val count = parentDict.getInt(COSName.getPDFName("Count"), 0)
         if (count != 0) {
             val newCount = if (count > 0) count - 1 else count + 1
             parentDict.setInt(COSName.getPDFName("Count"), newCount)
         }
     }
+
+    // endregion
 }

@@ -2,10 +2,6 @@ package com.neurodoc
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.bridge.WritableNativeMap
@@ -13,11 +9,8 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.tom_roush.pdfbox.pdmodel.PDDocument
-import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
-import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
-import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import java.io.File
 import java.util.UUID
@@ -27,9 +20,13 @@ import kotlin.coroutines.suspendCoroutine
 
 object OcrProcessor {
 
+    private val textRecognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    }
+
     suspend fun recognizePage(context: Context, pdfUrl: String, pageIndex: Int, language: String, promise: Promise) {
         try {
-            val bitmap = renderPageToBitmap(pdfUrl, pageIndex)
+            val bitmap = PdfUtils.renderPageToBitmap(pdfUrl, pageIndex)
             val blocks = performOcr(bitmap)
 
             val blocksArray = WritableNativeArray()
@@ -59,62 +56,58 @@ object OcrProcessor {
 
     suspend fun makeSearchable(context: Context, pdfUrl: String, language: String, pageIndexes: List<Int>?, tempDir: File, promise: Promise) {
         try {
-            val path = if (pdfUrl.startsWith("file://")) pdfUrl.removePrefix("file://") else pdfUrl
-            val srcFile = File(path)
-
-            // Load source document with pdfbox
-            val srcDoc = PDDocument.load(srcFile)
-            val targetPages = pageIndexes ?: (0 until srcDoc.numberOfPages).toList()
+            val srcFile = PdfUtils.resolveFile(pdfUrl)
+            val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
             var pagesProcessed = 0
 
-            // For each target page, render to bitmap, run OCR, add invisible text
-            for (i in targetPages) {
-                if (i >= srcDoc.numberOfPages) continue
+            PDDocument.load(srcFile).use { srcDoc ->
+                val targetPages = pageIndexes ?: (0 until srcDoc.numberOfPages).toList()
 
-                val bitmap = renderPageToBitmap(pdfUrl, i)
-                val blocks = performOcr(bitmap)
+                for (i in targetPages) {
+                    if (i >= srcDoc.numberOfPages) continue
 
-                if (blocks.isNotEmpty()) {
-                    val page = srcDoc.getPage(i)
-                    val mediaBox = page.mediaBox
+                    val bitmap = PdfUtils.renderPageToBitmap(pdfUrl, i)
+                    val blocks = performOcr(bitmap)
 
-                    val cs = PDPageContentStream(srcDoc, page, PDPageContentStream.AppendMode.APPEND, true, true)
+                    if (blocks.isNotEmpty()) {
+                        val page = srcDoc.getPage(i)
+                        val mediaBox = page.mediaBox
 
-                    // Set text rendering mode to invisible (mode 3)
-                    val gs = PDExtendedGraphicsState()
-                    gs.nonStrokingAlphaConstant = 0.0f
-                    cs.setGraphicsStateParameters(gs)
+                        val cs = PDPageContentStream(srcDoc, page, PDPageContentStream.AppendMode.APPEND, true, true)
 
-                    val font = PDType1Font.HELVETICA
+                        val gs = PDExtendedGraphicsState()
+                        gs.nonStrokingAlphaConstant = 0.0f
+                        cs.setGraphicsStateParameters(gs)
 
-                    for (block in blocks) {
-                        val pdfX = block.x * mediaBox.width
-                        val pdfY = mediaBox.height - (block.y + block.height) * mediaBox.height
-                        val pdfH = block.height * mediaBox.height
+                        val font = PDType1Font.HELVETICA
 
-                        val fontSize = (pdfH * 0.8f).coerceIn(4f, 72f)
+                        for (block in blocks) {
+                            val pdfX = block.x * mediaBox.width
+                            val pdfY = mediaBox.height - (block.y + block.height) * mediaBox.height
+                            val pdfH = block.height * mediaBox.height
 
-                        cs.beginText()
-                        cs.setFont(font, fontSize)
-                        cs.newLineAtOffset(pdfX, pdfY)
-                        try {
-                            cs.showText(block.text)
-                        } catch (_: Exception) {
-                            // Some characters may not be encodable in PDType1Font
+                            val fontSize = (pdfH * 0.8f).coerceIn(4f, 72f)
+
+                            cs.beginText()
+                            cs.setFont(font, fontSize)
+                            cs.newLineAtOffset(pdfX, pdfY)
+                            try {
+                                cs.showText(block.text)
+                            } catch (_: Exception) {
+                                // Some characters may not be encodable in PDType1Font
+                            }
+                            cs.endText()
                         }
-                        cs.endText()
+
+                        cs.close()
+                        pagesProcessed++
                     }
 
-                    cs.close()
-                    pagesProcessed++
+                    bitmap.recycle()
                 }
 
-                bitmap.recycle()
+                srcDoc.save(outputFile)
             }
-
-            val outputFile = File(tempDir, "${UUID.randomUUID()}.pdf")
-            srcDoc.save(outputFile)
-            srcDoc.close()
 
             promise.resolve(WritableNativeMap().apply {
                 putString("pdfUrl", "file://${outputFile.absolutePath}")
@@ -125,29 +118,7 @@ object OcrProcessor {
         }
     }
 
-    // MARK: - Helpers
-
-    private fun renderPageToBitmap(pdfUrl: String, pageIndex: Int, scale: Float = 2f): Bitmap {
-        val path = if (pdfUrl.startsWith("file://")) pdfUrl.removePrefix("file://") else pdfUrl
-        val file = File(path)
-        val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-        val renderer = PdfRenderer(fd)
-
-        val page = renderer.openPage(pageIndex)
-        val width = (page.width * scale).toInt()
-        val height = (page.height * scale).toInt()
-
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.WHITE)
-        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-
-        page.close()
-        renderer.close()
-        fd.close()
-
-        return bitmap
-    }
+    // region Helpers
 
     data class OcrBlock(
         val text: String,
@@ -159,10 +130,9 @@ object OcrProcessor {
     )
 
     private suspend fun performOcr(bitmap: Bitmap): List<OcrBlock> = suspendCoroutine { cont ->
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val inputImage = InputImage.fromBitmap(bitmap, 0)
 
-        recognizer.process(inputImage)
+        textRecognizer.process(inputImage)
             .addOnSuccessListener { text ->
                 val blocks = mutableListOf<OcrBlock>()
                 val imgW = bitmap.width.toFloat()
@@ -188,4 +158,6 @@ object OcrProcessor {
                 cont.resumeWithException(e)
             }
     }
+
+    // endregion
 }

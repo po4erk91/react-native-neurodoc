@@ -37,99 +37,91 @@ object DiffProcessor {
         promise: Promise
     ) {
         try {
-            val file1 = resolveFile(pdfUrl1)
-            val file2 = resolveFile(pdfUrl2)
-
-            val doc1 = PDDocument.load(file1)
-            val doc2 = PDDocument.load(file2)
+            val file1 = PdfUtils.resolveFile(pdfUrl1)
+            val file2 = PdfUtils.resolveFile(pdfUrl2)
 
             val colorAdded   = parseColor(addedColor)
             val colorDeleted = parseColor(deletedColor)
-            val colorChanged = parseColor(changedColor)
 
-            val pageCount1 = doc1.numberOfPages
-            val pageCount2 = doc2.numberOfPages
-            val sharedPages = min(pageCount1, pageCount2)
-
+            var sourcePdfUrl = ""
+            var targetPdfUrl = ""
             val changesPerPage = WritableNativeArray()
             var totalAdded = 0; var totalDeleted = 0; var totalChanged = 0
 
-            // --- Shared pages ---
-            for (i in 0 until sharedPages) {
-                val blocks1 = extractPageBlocks(doc1, i)
-                val blocks2 = extractPageBlocks(doc2, i)
+            PDDocument.load(file1).use { doc1 ->
+                PDDocument.load(file2).use { doc2 ->
+                    val pageCount1 = doc1.numberOfPages
+                    val pageCount2 = doc2.numberOfPages
+                    val sharedPages = min(pageCount1, pageCount2)
 
-                val diff = myersDiff(blocks1, blocks2)
+                    // --- Shared pages ---
+                    for (i in 0 until sharedPages) {
+                        val blocks1 = extractPageBlocks(doc1, i)
+                        val blocks2 = extractPageBlocks(doc2, i)
 
-                val sourceRects = mutableListOf<FloatArray>() // [x, y, w, h] normalized
-                val targetRects = mutableListOf<FloatArray>()
-                var added = 0; var deleted = 0; var changed = 0
+                        val diff = myersDiff(blocks1, blocks2)
 
-                for (op in diff) {
-                    when (op) {
-                        is DiffOp.Delete -> { sourceRects.add(op.block.toRect()); deleted++ }
-                        is DiffOp.Insert -> { targetRects.add(op.block.toRect()); added++ }
-                        is DiffOp.Change -> {
-                            sourceRects.add(op.old.toRect())
-                            targetRects.add(op.new.toRect())
-                            changed++
+                        val sourceRects = mutableListOf<FloatArray>()
+                        val targetRects = mutableListOf<FloatArray>()
+                        var added = 0; var deleted = 0; var changed = 0
+
+                        for (op in diff) {
+                            when (op) {
+                                is DiffOp.Delete -> { sourceRects.add(op.block.toRect()); deleted++ }
+                                is DiffOp.Insert -> { targetRects.add(op.block.toRect()); added++ }
+                                is DiffOp.Change -> {
+                                    sourceRects.add(op.old.toRect())
+                                    targetRects.add(op.new.toRect())
+                                    changed++
+                                }
+                                is DiffOp.Equal -> Unit
+                            }
                         }
-                        is DiffOp.Equal -> Unit
+
+                        if (annotateSource && sourceRects.isNotEmpty()) {
+                            applyHighlights(doc1, doc1.getPage(i), sourceRects, colorDeleted, opacity)
+                        }
+                        if (annotateTarget && targetRects.isNotEmpty()) {
+                            applyHighlights(doc2, doc2.getPage(i), targetRects, colorAdded, opacity)
+                        }
+
+                        changesPerPage.pushMap(pageChangeMap(i, i, added, deleted, changed))
+                        totalAdded += added; totalDeleted += deleted; totalChanged += changed
+                    }
+
+                    // --- Pages only in doc1 (deleted pages) ---
+                    for (i in sharedPages until pageCount1) {
+                        val blocks = extractPageBlocks(doc1, i)
+                        if (annotateSource && blocks.isNotEmpty()) {
+                            applyHighlights(doc1, doc1.getPage(i), blocks.map { it.toRect() }, colorDeleted, opacity)
+                        }
+                        changesPerPage.pushMap(pageChangeMap(i, -1, 0, blocks.size, 0))
+                        totalDeleted += blocks.size
+                    }
+
+                    // --- Pages only in doc2 (added pages) ---
+                    for (i in sharedPages until pageCount2) {
+                        val blocks = extractPageBlocks(doc2, i)
+                        if (annotateTarget && blocks.isNotEmpty()) {
+                            applyHighlights(doc2, doc2.getPage(i), blocks.map { it.toRect() }, colorAdded, opacity)
+                        }
+                        changesPerPage.pushMap(pageChangeMap(-1, i, blocks.size, 0, 0))
+                        totalAdded += blocks.size
+                    }
+
+                    // --- Save annotated PDFs ---
+                    if (annotateSource) {
+                        val outFile = File(tempDir, "${UUID.randomUUID()}_diff_source.pdf")
+                        doc1.save(outFile)
+                        sourcePdfUrl = "file://${outFile.absolutePath}"
+                    }
+                    if (annotateTarget) {
+                        val outFile = File(tempDir, "${UUID.randomUUID()}_diff_target.pdf")
+                        doc2.save(outFile)
+                        targetPdfUrl = "file://${outFile.absolutePath}"
                     }
                 }
-
-                if (annotateSource && sourceRects.isNotEmpty()) {
-                    val page = doc1.getPage(i)
-                    applyHighlights(doc1, page, sourceRects, colorDeleted, opacity)
-                }
-                if (annotateTarget && targetRects.isNotEmpty()) {
-                    val page = doc2.getPage(i)
-                    applyHighlights(doc2, page, targetRects, colorAdded, opacity)
-                }
-
-                changesPerPage.pushMap(pageChangeMap(i, i, added, deleted, changed))
-                totalAdded += added; totalDeleted += deleted; totalChanged += changed
             }
-
-            // --- Pages only in doc1 (deleted pages) ---
-            for (i in sharedPages until pageCount1) {
-                val blocks = extractPageBlocks(doc1, i)
-                if (annotateSource && blocks.isNotEmpty()) {
-                    val page = doc1.getPage(i)
-                    applyHighlights(doc1, page, blocks.map { it.toRect() }, colorDeleted, opacity)
-                }
-                changesPerPage.pushMap(pageChangeMap(i, -1, 0, blocks.size, 0))
-                totalDeleted += blocks.size
-            }
-
-            // --- Pages only in doc2 (added pages) ---
-            for (i in sharedPages until pageCount2) {
-                val blocks = extractPageBlocks(doc2, i)
-                if (annotateTarget && blocks.isNotEmpty()) {
-                    val page = doc2.getPage(i)
-                    applyHighlights(doc2, page, blocks.map { it.toRect() }, colorAdded, opacity)
-                }
-                changesPerPage.pushMap(pageChangeMap(-1, i, blocks.size, 0, 0))
-                totalAdded += blocks.size
-            }
-
-            // --- Save annotated PDFs ---
-            var sourcePdfUrl = ""
-            var targetPdfUrl = ""
-
-            if (annotateSource) {
-                val outFile = File(tempDir, "${UUID.randomUUID()}_diff_source.pdf")
-                doc1.save(outFile)
-                sourcePdfUrl = "file://${outFile.absolutePath}"
-            }
-            if (annotateTarget) {
-                val outFile = File(tempDir, "${UUID.randomUUID()}_diff_target.pdf")
-                doc2.save(outFile)
-                targetPdfUrl = "file://${outFile.absolutePath}"
-            }
-
-            doc1.close()
-            doc2.close()
 
             promise.resolve(WritableNativeMap().apply {
                 putString("sourcePdfUrl", sourcePdfUrl)
@@ -258,7 +250,6 @@ object DiffProcessor {
         pageWidth: Float, pageHeight: Float
     ): Block {
         val nx = x / pageWidth
-        // yDirAdj is from top, at baseline. Subtract height to get top edge.
         val ny = (y - height) / pageHeight
         val nw = width / pageWidth
         val nh = height / pageHeight
@@ -278,7 +269,6 @@ object DiffProcessor {
 
     private fun myersDiff(old: List<Block>, new: List<Block>): List<DiffOp> {
         val m = old.size; val n = new.size
-        // LCS table
         val lcs = Array(m + 1) { IntArray(n + 1) }
         for (i in 1..m) {
             for (j in 1..n) {
@@ -289,7 +279,6 @@ object DiffProcessor {
                 }
             }
         }
-        // Backtrack
         val ops = mutableListOf<DiffOp>()
         var i = m; var j = n
         while (i > 0 || j > 0) {
@@ -383,7 +372,6 @@ object DiffProcessor {
             val pdfW = w * mediaBox.width
             val pdfH = h * mediaBox.height
 
-            // PDF annotation (for PDF viewers)
             val annotation = PDAnnotationTextMarkup(PDAnnotationTextMarkup.SUB_TYPE_HIGHLIGHT)
             annotation.rectangle = PDRectangle(pdfX, pdfY, pdfW, pdfH)
             annotation.setColor(PDColor(color, PDDeviceRGB.INSTANCE))
@@ -395,17 +383,12 @@ object DiffProcessor {
             )
             page.annotations.add(annotation)
 
-            // Content stream draw (for Android PdfRenderer)
             val cs = PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)
             cs.saveGraphicsState()
             val gs = PDExtendedGraphicsState()
             gs.nonStrokingAlphaConstant = opacity
             cs.setGraphicsStateParameters(gs)
-            cs.setNonStrokingColor(
-                (color[0] * 255).toInt(),
-                (color[1] * 255).toInt(),
-                (color[2] * 255).toInt()
-            )
+            cs.setNonStrokingColor(color[0], color[1], color[2])
             cs.addRect(pdfX, pdfY, pdfW, pdfH)
             cs.fill()
             cs.restoreGraphicsState()
@@ -437,7 +420,4 @@ object DiffProcessor {
             floatArrayOf(1f, 1f, 0f) // yellow fallback
         }
     }
-
-    private fun resolveFile(url: String): File =
-        if (url.startsWith("file://")) File(url.removePrefix("file://")) else File(url)
 }

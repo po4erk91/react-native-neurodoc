@@ -2,10 +2,6 @@ package com.neurodoc
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.bridge.WritableNativeMap
@@ -22,6 +18,10 @@ import kotlin.coroutines.suspendCoroutine
 import kotlin.math.abs
 
 object TextExtractor {
+
+    private val textRecognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    }
 
     data class TextBlock(
         val text: String,
@@ -43,52 +43,52 @@ object TextExtractor {
         promise: Promise
     ) {
         try {
-            val file = resolveFile(pdfUrl)
-            val doc = PDDocument.load(file)
+            val file = PdfUtils.resolveFile(pdfUrl)
+            var pageWidth = 0f
+            var pageHeight = 0f
+            var blocks: List<TextBlock>
+            var usedMode: String
 
-            if (pageIndex < 0 || pageIndex >= doc.numberOfPages) {
-                doc.close()
-                promise.reject("TEXT_EXTRACTION_FAILED", "Invalid page index: $pageIndex")
-                return
-            }
-
-            val page = doc.getPage(pageIndex)
-            val mediaBox = page.mediaBox
-            val pageWidth = mediaBox.width
-            val pageHeight = mediaBox.height
-
-            val blocks: List<TextBlock>
-            val usedMode: String
-
-            when (mode) {
-                "native" -> {
-                    blocks = extractNativeText(doc, pageIndex, pageWidth, pageHeight)
-                    usedMode = "native"
+            PDDocument.load(file).use { doc ->
+                if (pageIndex < 0 || pageIndex >= doc.numberOfPages) {
+                    promise.reject("TEXT_EXTRACTION_FAILED", "Invalid page index: $pageIndex")
+                    return@use
                 }
-                "ocr" -> {
-                    blocks = extractWithOcr(pdfUrl, pageIndex, pageWidth, pageHeight)
-                    usedMode = "ocr"
-                }
-                else -> { // "auto"
-                    val nativeBlocks = extractNativeText(doc, pageIndex, pageWidth, pageHeight)
-                    if (nativeBlocks.isNotEmpty() && nativeBlocks.any { it.text.trim().isNotEmpty() }) {
-                        blocks = nativeBlocks
+
+                val page = doc.getPage(pageIndex)
+                val mediaBox = page.mediaBox
+                pageWidth = mediaBox.width
+                pageHeight = mediaBox.height
+
+                when (mode) {
+                    "native" -> {
+                        blocks = extractNativeText(doc, pageIndex, pageWidth, pageHeight)
                         usedMode = "native"
-                    } else {
+                    }
+                    "ocr" -> {
                         blocks = extractWithOcr(pdfUrl, pageIndex, pageWidth, pageHeight)
                         usedMode = "ocr"
                     }
+                    else -> { // "auto"
+                        val nativeBlocks = extractNativeText(doc, pageIndex, pageWidth, pageHeight)
+                        if (nativeBlocks.isNotEmpty() && nativeBlocks.any { it.text.trim().isNotEmpty() }) {
+                            blocks = nativeBlocks
+                            usedMode = "native"
+                        } else {
+                            blocks = extractWithOcr(pdfUrl, pageIndex, pageWidth, pageHeight)
+                            usedMode = "ocr"
+                        }
+                    }
                 }
-            }
 
-            doc.close()
-            promise.resolve(buildResult(blocks, pageWidth, pageHeight, usedMode))
+                promise.resolve(buildResult(blocks, pageWidth, pageHeight, usedMode))
+            }
         } catch (e: Exception) {
             promise.reject("TEXT_EXTRACTION_FAILED", e.message, e)
         }
     }
 
-    // MARK: - Native text extraction with PDFBox
+    // region Native text extraction with PDFBox
 
     private fun extractNativeText(
         doc: PDDocument,
@@ -113,7 +113,7 @@ object TextExtractor {
 
         data class CharInfo(
             val char: String,
-            val x: Float,         // absolute PDF coords (bottom-left origin)
+            val x: Float,
             val y: Float,
             val width: Float,
             val height: Float,
@@ -163,7 +163,6 @@ object TextExtractor {
                 val isLargeGap = gap > prev.width * 0.4f
 
                 if (isWhitespace || isNewLine || isLargeGap) {
-                    // Save current word
                     val text = currentText.toString().trim()
                     if (text.isNotEmpty()) {
                         words.add(toNormalizedBlock(
@@ -207,7 +206,6 @@ object TextExtractor {
             }
         }
 
-        // Last word
         val text = currentText.toString().trim()
         if (text.isNotEmpty()) {
             words.add(toNormalizedBlock(
@@ -221,7 +219,6 @@ object TextExtractor {
 
     /**
      * Convert PDFTextStripper coordinates to normalized 0-1, top-left origin.
-     * PDFTextStripper's yDirAdj is already in top-left coordinate system (distance from top).
      */
     private fun toNormalizedBlock(
         text: String,
@@ -235,7 +232,6 @@ object TextExtractor {
         pageHeight: Float
     ): TextBlock {
         val nx = x / pageWidth
-        // yDirAdj is from top, but it's the baseline; adjust to top of text
         val ny = (y - height) / pageHeight
         val nw = width / pageWidth
         val nh = height / pageHeight
@@ -252,7 +248,9 @@ object TextExtractor {
         )
     }
 
-    // MARK: - OCR fallback
+    // endregion
+
+    // region OCR fallback
 
     private suspend fun extractWithOcr(
         pdfUrl: String,
@@ -260,7 +258,7 @@ object TextExtractor {
         pageWidth: Float,
         pageHeight: Float
     ): List<TextBlock> {
-        val bitmap = renderPageToBitmap(pdfUrl, pageIndex)
+        val bitmap = PdfUtils.renderPageToBitmap(pdfUrl, pageIndex)
         val blocks = performOcr(bitmap, pageWidth, pageHeight)
         bitmap.recycle()
         return blocks
@@ -271,10 +269,9 @@ object TextExtractor {
         pageWidth: Float,
         pageHeight: Float
     ): List<TextBlock> = suspendCoroutine { cont ->
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val inputImage = InputImage.fromBitmap(bitmap, 0)
 
-        recognizer.process(inputImage)
+        textRecognizer.process(inputImage)
             .addOnSuccessListener { text ->
                 val blocks = mutableListOf<TextBlock>()
                 val imgW = bitmap.width.toFloat()
@@ -308,34 +305,9 @@ object TextExtractor {
             }
     }
 
-    // MARK: - Helpers
+    // endregion
 
-    private fun renderPageToBitmap(pdfUrl: String, pageIndex: Int, scale: Float = 2f): Bitmap {
-        val path = if (pdfUrl.startsWith("file://")) pdfUrl.removePrefix("file://") else pdfUrl
-        val file = File(path)
-        val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-        val renderer = PdfRenderer(fd)
-
-        val page = renderer.openPage(pageIndex)
-        val width = (page.width * scale).toInt()
-        val height = (page.height * scale).toInt()
-
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.WHITE)
-        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-
-        page.close()
-        renderer.close()
-        fd.close()
-
-        return bitmap
-    }
-
-    private fun resolveFile(urlString: String): File {
-        val path = if (urlString.startsWith("file://")) urlString.removePrefix("file://") else urlString
-        return File(path)
-    }
+    // region Helpers
 
     private fun buildResult(
         blocks: List<TextBlock>,
@@ -366,4 +338,6 @@ object TextExtractor {
             putString("mode", mode)
         }
     }
+
+    // endregion
 }

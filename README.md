@@ -11,14 +11,18 @@ A high-performance React Native TurboModule for comprehensive PDF operations on 
 - **Merge / Split** - Combine multiple PDFs or split by page ranges
 - **Page Operations** - Delete, reorder pages
 - **Annotations** - Add/read/delete highlights, notes, freehand drawings
+- **Bookmarks** - Read, add, and remove PDF bookmarks (outline / table of contents)
 - **Forms (AcroForm)** - Read fields, fill values, create forms from scratch, flatten
 - **Encryption** - Password-protect PDFs with AES; decrypt to remove protection
 - **Watermarks** - Text and image watermarks with opacity, rotation, page targeting
 - **Content Editing** - Inline text replacement in PDFs without forms or rasterization
 - **Redaction** - Irreversible content destruction via rasterization (GDPR/HIPAA)
 - **Template Generation** - Create PDFs from declarative templates with data binding
+- **Document Comparison** - Visual diff between two PDF versions with color-coded highlights
+- **Document Conversion** - Convert DOCX → PDF and PDF → DOCX with image and table support
 - **Native PDF Viewer** - Scroll/page/grid modes, overlays, text selection, zoom
-- **Document Picker** - System file picker with cross-platform support
+- **Document Picker** - System file picker for PDFs and arbitrary file types
+- **Save As** - System "Save As" dialog via Storage Access Framework / UIDocumentPicker
 
 ## Installation
 
@@ -181,6 +185,32 @@ const { annotations } = await NeuroDoc.getAnnotations(pdfUrl);
 
 // Delete one
 await NeuroDoc.deleteAnnotation({ pdfUrl, annotationId: annotations[0].id });
+```
+
+---
+
+### Bookmarks
+
+```typescript
+// Read all bookmarks (flat list with nesting level)
+const { bookmarks } = await NeuroDoc.getBookmarks(pdfUrl);
+// [{ title, pageIndex, level, children }]
+
+// Add bookmarks
+const { pdfUrl: withBookmarks } = await NeuroDoc.addBookmarks({
+  pdfUrl,
+  bookmarks: [
+    { title: 'Chapter 1', pageIndex: 0 },
+    { title: 'Chapter 2', pageIndex: 5 },
+    { title: 'Section 2.1', pageIndex: 5, parentIndex: 1 }, // nested under Chapter 2
+  ],
+});
+
+// Remove bookmarks by flat-list index
+const { pdfUrl: cleaned } = await NeuroDoc.removeBookmarks({
+  pdfUrl,
+  indexes: [0, 2], // remove 1st and 3rd bookmarks
+});
 ```
 
 ---
@@ -462,13 +492,96 @@ PdfViewerCommands.zoomTo(ref.current!, 2.0);
 
 ---
 
+### Document Comparison
+
+Compare two PDF versions and get annotated copies with color-coded highlights. Uses word-level text extraction and Myers diff algorithm — no server required.
+
+- **Green** — text added in the new version (highlighted on `targetPdfUrl`)
+- **Red** — text deleted from the old version (highlighted on `sourcePdfUrl`)
+- **Yellow** — text changed (fuzzy-matched, highlighted on both)
+
+```typescript
+const result = await NeuroDoc.comparePdfs({
+  pdfUrl1: 'file:///path/v1.pdf',
+  pdfUrl2: 'file:///path/v2.pdf',
+  // optional:
+  addedColor: '#00CC00',   // default
+  deletedColor: '#FF4444', // default
+  changedColor: '#FFAA00', // default
+  opacity: 0.35,           // default
+  annotateSource: true,    // highlight v1 with deletions/changes
+  annotateTarget: true,    // highlight v2 with additions/changes
+});
+
+// result.sourcePdfUrl — v1.pdf with deleted/changed words highlighted
+// result.targetPdfUrl — v2.pdf with added/changed words highlighted
+// result.changes — per-page stats: [{ pageIndex1, pageIndex2, added, deleted, changed }]
+// result.totalAdded / totalDeleted / totalChanged
+```
+
+Pages present in one document but not the other are fully highlighted. Outputs are standard PDFs with embedded highlight annotations — open them in `NativePdfViewerView` or any PDF reader.
+
+---
+
+### Document Conversion
+
+Convert between DOCX and PDF natively on-device — no server required.
+
+#### DOCX → PDF
+
+Supports paragraphs, headings, bold/italic/underline, font size/color, inline images, basic tables, and bullet/numbered lists.
+
+```typescript
+const result = await NeuroDoc.convertDocxToPdf({
+  inputPath: 'file:///path/to/document.docx',
+  preserveImages: true, // default true
+  pageSize: 'A4',       // 'A4' | 'Letter' | 'Legal', default 'A4'
+});
+// { pdfUrl, pageCount, fileSize, warnings }
+```
+
+`warnings` contains non-fatal conversion notes (e.g. unsupported elements skipped).
+
+#### PDF → DOCX
+
+Uses native text extraction with optional OCR fallback to reconstruct document structure. Layout fidelity depends on the PDF source.
+
+```typescript
+const result = await NeuroDoc.convertPdfToDocx({
+  inputPath: 'file:///path/to/document.pdf',
+  mode: 'textAndImages', // 'text' | 'textAndImages' | 'ocrFallback', default 'textAndImages'
+  language: 'auto',      // for OCR fallback
+});
+// { docxUrl, pageCount, fileSize, mode }
+```
+
+---
+
 ### Document Picker
 
 ```typescript
+// Pick a PDF
 const { pdfUrl } = await NeuroDoc.pickDocument();
+
+// Pick any file type (UTType on iOS, MIME type on Android)
+const { fileUrl } = await NeuroDoc.pickFile([
+  'org.openxmlformats.wordprocessingml.document', // DOCX (iOS UTType)
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX (Android MIME)
+]);
 ```
 
-Opens the system file picker. Rejects with `PICKER_CANCELLED` if dismissed.
+Both pickers reject with `PICKER_CANCELLED` if dismissed.
+
+---
+
+### Save As
+
+Open the system "Save As" dialog to let the user choose where to save a file.
+Uses `ACTION_CREATE_DOCUMENT` on Android and `UIDocumentPickerViewController` on iOS.
+
+```typescript
+const { savedPath } = await NeuroDoc.saveTo(pdfUrl, 'MyDocument.pdf');
+```
 
 ---
 
@@ -514,6 +627,7 @@ try {
 | `SPLIT_FAILED` | Split operation error |
 | `PAGE_OPERATION_FAILED` | Delete/reorder error |
 | `ANNOTATION_FAILED` | Annotation error |
+| `BOOKMARK_FAILED` | Bookmark operation error |
 | `FORM_FAILED` | Form operation error |
 | `ENCRYPTION_FAILED` | Encrypt/decrypt error |
 | `WATERMARK_FAILED` | Watermark error |
@@ -521,6 +635,9 @@ try {
 | `CONTENT_EDIT_FAILED` | Content editing error |
 | `TEMPLATE_FAILED` | Template generation error |
 | `TEXT_EXTRACTION_FAILED` | Text extraction error |
+| `CONVERSION_FAILED` | DOCX↔PDF conversion error |
+| `COMPARISON_FAILED` | PDF comparison error |
+| `SAVE_FAILED` | Save As dialog error |
 | `CLEANUP_FAILED` | Temp cleanup error |
 
 ---

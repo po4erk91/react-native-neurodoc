@@ -61,6 +61,16 @@ class PdfViewerViewManager : SimpleViewManager<PdfViewerView>() {
         view.disableSelection = disabled
     }
 
+    @ReactProp(name = "displayMode")
+    fun setDisplayMode(view: PdfViewerView, mode: String?) {
+        view.displayMode = mode ?: "scroll"
+    }
+
+    @ReactProp(name = "showThumbnails", defaultBoolean = false)
+    fun setShowThumbnails(view: PdfViewerView, show: Boolean) {
+        view.showThumbnails = show
+    }
+
     override fun getCommandsMap(): Map<String, Int> {
         return mapOf(
             "goToPage" to CMD_GO_TO_PAGE,
@@ -91,6 +101,7 @@ class PdfViewerViewManager : SimpleViewManager<PdfViewerView>() {
             .put("onTap", MapBuilder.of("registrationName", "onTap"))
             .put("onOverlayMoved", MapBuilder.of("registrationName", "onOverlayMoved"))
             .put("onOverlayResized", MapBuilder.of("registrationName", "onOverlayResized"))
+            .put("onDocumentChanged", MapBuilder.of("registrationName", "onDocumentChanged"))
             .build()
     }
 

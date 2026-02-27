@@ -26,8 +26,123 @@ public class NeurodocImpl: NSObject {
     private func saveTempPdf(_ document: PDFDocument, fileName: String? = nil) -> URL {
         let name = fileName ?? UUID().uuidString
         let url = tempDirectory.appendingPathComponent("\(name).pdf")
-        document.write(to: url)
+        if let data = document.dataRepresentation() {
+            try? data.write(to: url)
+        } else {
+            document.write(to: url)
+        }
         return url
+    }
+
+    /// Reorder pages. For operations that don't actually change order, returns a copy.
+    /// For actual reordering, manipulates raw PDF data to preserve font encodings.
+    private func reorderPdfInPlace(pdfUrl: String, order: [Int]) -> URL? {
+        guard let url = resolveUrl(pdfUrl) else { return nil }
+
+        // Check if order is identity (no change needed) — just copy file
+        let identity = Array(0..<order.count)
+        if order == identity {
+            let outputUrl = tempDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
+            do {
+                try FileManager.default.copyItem(at: url, to: outputUrl)
+            } catch {
+                return nil
+            }
+            return outputUrl
+        }
+
+        // For actual reordering, use raw PDF data manipulation via QPDF-style approach:
+        // Read the original file, use CGPDFDocument to understand page structure,
+        // then construct new PDF by concatenating page data.
+        //
+        // Since PDFKit corrupts font encoding on save, we use a workaround:
+        // Copy file, then use PDFDocument only for exchangePage (no serialization issues
+        // when just swapping page references within the same internal structure).
+        let outputUrl = tempDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
+        do {
+            try FileManager.default.copyItem(at: url, to: outputUrl)
+        } catch {
+            return nil
+        }
+
+        guard let doc = PDFDocument(url: outputUrl) else { return nil }
+        let pageCount = doc.pageCount
+        guard order.count == pageCount else { return nil }
+
+        // Use selection sort with exchangePage
+        var currentOrder = Array(0..<pageCount)
+        for targetPos in 0..<pageCount {
+            let desiredPage = order[targetPos]
+            guard let currentPos = currentOrder.firstIndex(of: desiredPage) else { return nil }
+            if currentPos != targetPos {
+                doc.exchangePage(at: targetPos, withPageAt: currentPos)
+                currentOrder.swapAt(targetPos, currentPos)
+            }
+        }
+
+        // Write back to same URL (overwrite the copy)
+        guard let data = doc.dataRepresentation() else { return nil }
+        do {
+            try data.write(to: outputUrl)
+        } catch {
+            return nil
+        }
+        return outputUrl
+    }
+
+    /// Delete pages in-place within a PDFDocument (preserves fonts/text/encoding).
+    private func deletePdfPagesInPlace(pdfUrl: String, indicesToDelete: Set<Int>) -> (URL, Int)? {
+        guard let url = resolveUrl(pdfUrl), let doc = PDFDocument(url: url) else { return nil }
+
+        // Remove pages in reverse order to keep indices stable
+        for i in stride(from: doc.pageCount - 1, through: 0, by: -1) {
+            if indicesToDelete.contains(i) {
+                doc.removePage(at: i)
+            }
+        }
+
+        let outputUrl = tempDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
+        guard let data = doc.dataRepresentation() else { return nil }
+        do {
+            try data.write(to: outputUrl)
+        } catch {
+            return nil
+        }
+        return (outputUrl, doc.pageCount)
+    }
+
+    /// Split a PDFDocument into ranges (preserves fonts/text by loading from same source each time).
+    private func splitPdf(pdfUrl: String, ranges: [[NSNumber]]) -> [URL]? {
+        guard let url = resolveUrl(pdfUrl) else { return nil }
+
+        var outputUrls: [URL] = []
+
+        for range in ranges {
+            guard range.count >= 2 else { return nil }
+            let start = range[0].intValue
+            let end = range[1].intValue
+
+            // Load fresh doc for each split to preserve fonts
+            guard let doc = PDFDocument(url: url) else { return nil }
+
+            // Remove pages outside the range (reverse order)
+            for i in stride(from: doc.pageCount - 1, through: 0, by: -1) {
+                if i < start || i > end {
+                    doc.removePage(at: i)
+                }
+            }
+
+            let outputUrl = tempDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
+            guard let data = doc.dataRepresentation() else { return nil }
+            do {
+                try data.write(to: outputUrl)
+            } catch {
+                return nil
+            }
+            outputUrls.append(outputUrl)
+        }
+
+        return outputUrls
     }
 
     // MARK: - getMetadata
@@ -99,10 +214,17 @@ public class NeurodocImpl: NSObject {
 
     public func merge(pdfUrls: [String], fileName: String, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
         DispatchQueue.global(qos: .userInitiated).async { [self] in
-            let mergedDoc = PDFDocument()
-            var totalPages = 0
+            // Use first PDF as base, append pages from others
+            guard let firstUrl = pdfUrls.first,
+                  let baseUrl = resolveUrl(firstUrl),
+                  let mergedDoc = PDFDocument(url: baseUrl) else {
+                rejecter("MERGE_FAILED", "Failed to load first PDF", nil)
+                return
+            }
 
-            for urlStr in pdfUrls {
+            var totalPages = mergedDoc.pageCount
+
+            for urlStr in pdfUrls.dropFirst() {
                 guard let url = resolveUrl(urlStr), let doc = PDFDocument(url: url) else {
                     rejecter("MERGE_FAILED", "Failed to load PDF: \(urlStr)", nil)
                     return
@@ -115,7 +237,14 @@ public class NeurodocImpl: NSObject {
                 }
             }
 
-            let outputUrl = saveTempPdf(mergedDoc, fileName: fileName)
+            let name = fileName.hasSuffix(".pdf") ? String(fileName.dropLast(4)) : fileName
+            let outputUrl = tempDirectory.appendingPathComponent("\(name).pdf")
+            if let data = mergedDoc.dataRepresentation() {
+                try? data.write(to: outputUrl)
+            } else {
+                mergedDoc.write(to: outputUrl)
+            }
+
             let fileSize = (try? Data(contentsOf: outputUrl))?.count ?? 0
 
             resolver([
@@ -130,35 +259,12 @@ public class NeurodocImpl: NSObject {
 
     public func split(pdfUrl: String, ranges: [[NSNumber]], resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
         DispatchQueue.global(qos: .userInitiated).async { [self] in
-            guard let url = resolveUrl(pdfUrl), let doc = PDFDocument(url: url) else {
-                rejecter("SPLIT_FAILED", "Failed to load PDF", nil)
+            guard let urls = splitPdf(pdfUrl: pdfUrl, ranges: ranges) else {
+                rejecter("SPLIT_FAILED", "Failed to split PDF", nil)
                 return
             }
 
-            var outputUrls: [String] = []
-
-            for (idx, range) in ranges.enumerated() {
-                guard range.count >= 2 else {
-                    rejecter("SPLIT_FAILED", "Invalid range at index \(idx)", nil)
-                    return
-                }
-                let start = range[0].intValue
-                let end = range[1].intValue
-
-                let splitDoc = PDFDocument()
-                var pageIdx = 0
-                for i in start...min(end, doc.pageCount - 1) {
-                    if let page = doc.page(at: i) {
-                        splitDoc.insert(page, at: pageIdx)
-                        pageIdx += 1
-                    }
-                }
-
-                let outputUrl = saveTempPdf(splitDoc)
-                outputUrls.append(outputUrl.absoluteString)
-            }
-
-            resolver(["pdfUrls": outputUrls])
+            resolver(["pdfUrls": urls.map { $0.absoluteString }])
         }
     }
 
@@ -166,26 +272,15 @@ public class NeurodocImpl: NSObject {
 
     public func deletePages(pdfUrl: String, pageIndexes: [NSNumber], resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
         DispatchQueue.global(qos: .userInitiated).async { [self] in
-            guard let url = resolveUrl(pdfUrl), let doc = PDFDocument(url: url) else {
-                rejecter("PAGE_OPERATION_FAILED", "Failed to load PDF", nil)
+            let indicesToDelete = Set(pageIndexes.map { $0.intValue })
+            guard let (outputUrl, pageCount) = deletePdfPagesInPlace(pdfUrl: pdfUrl, indicesToDelete: indicesToDelete) else {
+                rejecter("PAGE_OPERATION_FAILED", "Failed to delete pages", nil)
                 return
             }
 
-            let indicesToDelete = Set(pageIndexes.map { $0.intValue })
-            let newDoc = PDFDocument()
-            var newIdx = 0
-
-            for i in 0..<doc.pageCount {
-                if !indicesToDelete.contains(i), let page = doc.page(at: i) {
-                    newDoc.insert(page, at: newIdx)
-                    newIdx += 1
-                }
-            }
-
-            let outputUrl = saveTempPdf(newDoc)
             resolver([
                 "pdfUrl": outputUrl.absoluteString,
-                "pageCount": newDoc.pageCount,
+                "pageCount": pageCount,
             ] as [String: Any])
         }
     }
@@ -194,22 +289,12 @@ public class NeurodocImpl: NSObject {
 
     public func reorderPages(pdfUrl: String, order: [NSNumber], resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
         DispatchQueue.global(qos: .userInitiated).async { [self] in
-            guard let url = resolveUrl(pdfUrl), let doc = PDFDocument(url: url) else {
-                rejecter("PAGE_OPERATION_FAILED", "Failed to load PDF", nil)
+            let orderArray = order.map { $0.intValue }
+            guard let outputUrl = reorderPdfInPlace(pdfUrl: pdfUrl, order: orderArray) else {
+                rejecter("PAGE_OPERATION_FAILED", "Failed to reorder pages", nil)
                 return
             }
 
-            let newDoc = PDFDocument()
-            for (newIdx, oldIdx) in order.enumerated() {
-                let idx = oldIdx.intValue
-                guard idx >= 0 && idx < doc.pageCount, let page = doc.page(at: idx) else {
-                    rejecter("PAGE_OPERATION_FAILED", "Invalid page index: \(idx)", nil)
-                    return
-                }
-                newDoc.insert(page, at: newIdx)
-            }
-
-            let outputUrl = saveTempPdf(newDoc)
             resolver(["pdfUrl": outputUrl.absoluteString])
         }
     }
@@ -305,7 +390,7 @@ public class NeurodocImpl: NSObject {
             }
 
             // PDFKit's write() preserves encryption metadata even after unlock.
-            // Copy all pages into a fresh PDFDocument to strip encryption.
+            // Copy pages in-place to a fresh PDFDocument to strip encryption while preserving fonts.
             let newDoc = PDFDocument()
             for i in 0..<doc.pageCount {
                 if let page = doc.page(at: i) {
@@ -332,11 +417,11 @@ public class NeurodocImpl: NSObject {
                 return
             }
 
-            let targetPages: [Int]
+            let targetPages: Set<Int>
             if let indexes = pageIndexes {
-                targetPages = indexes.map { $0.intValue }
+                targetPages = Set(indexes.map { $0.intValue })
             } else {
-                targetPages = Array(0..<doc.pageCount)
+                targetPages = Set(0..<doc.pageCount)
             }
 
             let watermarkColor = UIColor(hex: color) ?? .red
@@ -344,40 +429,31 @@ public class NeurodocImpl: NSObject {
             // Load watermark image if provided
             var watermarkImage: UIImage?
             if let imgUrlStr = imageUrl, let imgUrl = resolveUrl(imgUrlStr),
-               let data = try? Data(contentsOf: imgUrl) {
-                watermarkImage = UIImage(data: data)
+               let imgData = try? Data(contentsOf: imgUrl) {
+                watermarkImage = UIImage(data: imgData)
             }
 
-            let outputUrl = tempDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
-            let renderer = UIGraphicsPDFRenderer(bounds: .zero)
-
-            // We need to create the PDF page by page
-            let pdfData = NSMutableData()
-            UIGraphicsBeginPDFContextToData(pdfData, .zero, nil)
-
             for i in 0..<doc.pageCount {
-                guard let page = doc.page(at: i) else { continue }
+                guard targetPages.contains(i), let page = doc.page(at: i) else { continue }
                 let bounds = page.bounds(for: .mediaBox)
 
-                UIGraphicsBeginPDFPageWithInfo(bounds, nil)
-                guard let ctx = UIGraphicsGetCurrentContext() else { continue }
+                // Create a stamp annotation that covers the full page for the watermark
+                let stampAnnot = PDFAnnotation(bounds: bounds, forType: .stamp, withProperties: nil)
 
-                // Draw original page
-                ctx.saveGState()
-                ctx.translateBy(x: 0, y: bounds.height)
-                ctx.scaleBy(x: 1, y: -1)
-                page.draw(with: .mediaBox, to: ctx)
-                ctx.restoreGState()
+                // Render watermark content into the stamp appearance
+                let renderer = UIGraphicsImageRenderer(size: bounds.size)
+                let image = renderer.image { ctx in
+                    // Transparent background
+                    UIColor.clear.setFill()
+                    ctx.fill(CGRect(origin: .zero, size: bounds.size))
 
-                // Draw watermark if this page is targeted
-                if targetPages.contains(i) {
-                    ctx.saveGState()
-                    ctx.setAlpha(CGFloat(opacity))
+                    let cgCtx = ctx.cgContext
+                    cgCtx.setAlpha(CGFloat(opacity))
 
                     let centerX = bounds.width / 2
                     let centerY = bounds.height / 2
-                    ctx.translateBy(x: centerX, y: centerY)
-                    ctx.rotate(by: -CGFloat(angle) * .pi / 180)
+                    cgCtx.translateBy(x: centerX, y: centerY)
+                    cgCtx.rotate(by: -CGFloat(angle) * .pi / 180)
 
                     if let text = text {
                         let font = UIFont.systemFont(ofSize: CGFloat(fontSize), weight: .bold)
@@ -394,19 +470,27 @@ public class NeurodocImpl: NSObject {
                                              height: min(img.size.height, bounds.height * 0.5))
                         img.draw(in: CGRect(x: -imgSize.width / 2, y: -imgSize.height / 2, width: imgSize.width, height: imgSize.height))
                     }
-
-                    ctx.restoreGState()
                 }
+
+                // Set the stamp appearance from our rendered image
+                let border = PDFBorder()
+                border.lineWidth = 0
+                stampAnnot.border = border
+                stampAnnot.color = .clear
+
+                // Create appearance stream from image
+                if let cgImage = image.cgImage {
+                    let imagePage = PDFPage(image: UIImage(cgImage: cgImage))
+                    // Use PDFAnnotation's direct image approach
+                    stampAnnot.setValue(image, forAnnotationKey: PDFAnnotationKey(rawValue: "/AP"))
+                }
+
+                page.addAnnotation(stampAnnot)
             }
 
-            UIGraphicsEndPDFContext()
-
-            do {
-                try pdfData.write(to: outputUrl, options: .atomic)
-                resolver(["pdfUrl": outputUrl.absoluteString])
-            } catch {
-                rejecter("WATERMARK_FAILED", "Failed to save watermarked PDF: \(error.localizedDescription)", error as NSError)
-            }
+            let outputUrl = tempDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
+            doc.write(to: outputUrl)
+            resolver(["pdfUrl": outputUrl.absoluteString])
         }
     }
 
@@ -471,6 +555,30 @@ public class NeurodocImpl: NSObject {
         }
     }
 
+    // MARK: - getBookmarks
+
+    public func getBookmarks(pdfUrl: String, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            BookmarkProcessor.getBookmarks(pdfUrl: pdfUrl, resolver: resolver, rejecter: rejecter)
+        }
+    }
+
+    // MARK: - addBookmarks
+
+    public func addBookmarks(pdfUrl: String, bookmarks: [[String: Any]], resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            BookmarkProcessor.addBookmarks(pdfUrl: pdfUrl, bookmarks: bookmarks, tempDirectory: tempDirectory, resolver: resolver, rejecter: rejecter)
+        }
+    }
+
+    // MARK: - removeBookmarks
+
+    public func removeBookmarks(pdfUrl: String, indexes: [NSNumber], resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            BookmarkProcessor.removeBookmarks(pdfUrl: pdfUrl, indexes: indexes.map { $0.intValue }, tempDirectory: tempDirectory, resolver: resolver, rejecter: rejecter)
+        }
+    }
+
     // MARK: - pickDocument
 
     public func pickDocument(resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
@@ -499,6 +607,147 @@ public class NeurodocImpl: NSObject {
         }
     }
 
+    // MARK: - pickFile
+
+    public func pickFile(types: [String], resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.main.async {
+            NSLog("[Neurodoc] pickFile called with types: %@", types.joined(separator: ", "))
+            let utTypes = types.compactMap { UTType($0) }
+            NSLog("[Neurodoc] Resolved UTTypes: %@", utTypes.map { $0.identifier }.joined(separator: ", "))
+            guard !utTypes.isEmpty else {
+                rejecter("PICKER_FAILED", "No valid UTType identifiers provided", nil)
+                return
+            }
+
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: utTypes)
+            picker.allowsMultipleSelection = false
+
+            let delegate = DocumentPickerDelegate(resolver: resolver, rejecter: rejecter, resultKey: "fileUrl")
+            picker.delegate = delegate
+            objc_setAssociatedObject(picker, &DocumentPickerDelegate.associatedKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+            guard let rootVC = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow })?
+                .rootViewController else {
+                rejecter("PICKER_FAILED", "No root view controller", nil)
+                return
+            }
+
+            var presenter = rootVC
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+            presenter.present(picker, animated: true)
+        }
+    }
+
+    // MARK: - convertDocxToPdf
+
+    public func convertDocxToPdf(inputPath: String, preserveImages: Bool, pageSize: String,
+                                  resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            DocxConverter.convertDocxToPdf(
+                inputPath: inputPath,
+                preserveImages: preserveImages,
+                pageSize: pageSize,
+                tempDirectory: tempDirectory,
+                resolver: resolver,
+                rejecter: rejecter
+            )
+        }
+    }
+
+    // MARK: - convertPdfToDocx
+
+    public func convertPdfToDocx(inputPath: String, mode: String, language: String,
+                                  resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            DocxConverter.convertPdfToDocx(
+                inputPath: inputPath,
+                mode: mode,
+                language: language,
+                tempDirectory: tempDirectory,
+                resolver: resolver,
+                rejecter: rejecter
+            )
+        }
+    }
+
+    // MARK: - saveTo
+
+    public func saveTo(pdfUrl: String, fileName: String, resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        DispatchQueue.main.async { [self] in
+            guard let sourceUrl = resolveUrl(pdfUrl), FileManager.default.fileExists(atPath: sourceUrl.path) else {
+                rejecter("SAVE_FAILED", "Source file does not exist: \(pdfUrl)", nil)
+                return
+            }
+
+            // Copy source to temp with desired fileName so the save dialog shows correct name
+            let safeName = fileName.hasSuffix(".pdf") ? fileName : "\(fileName).pdf"
+            let tempUrl = tempDirectory.appendingPathComponent(safeName)
+            try? FileManager.default.removeItem(at: tempUrl)
+            do {
+                try FileManager.default.copyItem(at: sourceUrl, to: tempUrl)
+            } catch {
+                rejecter("SAVE_FAILED", "Failed to prepare file for export: \(error.localizedDescription)", error as NSError)
+                return
+            }
+
+            let picker = UIDocumentPickerViewController(forExporting: [tempUrl], asCopy: true)
+            let delegate = SaveDocumentPickerDelegate(resolver: resolver, rejecter: rejecter)
+            picker.delegate = delegate
+            objc_setAssociatedObject(picker, &SaveDocumentPickerDelegate.associatedKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+            guard let rootVC = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow })?
+                .rootViewController else {
+                rejecter("SAVE_FAILED", "No root view controller", nil)
+                return
+            }
+
+            var presenter = rootVC
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+            presenter.present(picker, animated: true)
+        }
+    }
+
+    // MARK: - comparePdfs
+
+    public func comparePdfs(
+        pdfUrl1: String,
+        pdfUrl2: String,
+        addedColor: String,
+        deletedColor: String,
+        changedColor: String,
+        opacity: Double,
+        annotateSource: Bool,
+        annotateTarget: Bool,
+        resolver: @escaping RNResolver,
+        rejecter: @escaping RNRejecter
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            DiffProcessor.comparePdfs(
+                pdfUrl1: pdfUrl1,
+                pdfUrl2: pdfUrl2,
+                addedColor: addedColor,
+                deletedColor: deletedColor,
+                changedColor: changedColor,
+                opacity: opacity,
+                annotateSource: annotateSource,
+                annotateTarget: annotateTarget,
+                tempDirectory: tempDirectory,
+                resolver: resolver,
+                rejecter: rejecter
+            )
+        }
+    }
+
     // MARK: - cleanupTempFiles
 
     public func cleanupTempFiles(resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
@@ -522,10 +771,12 @@ private class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
 
     private let resolver: RNResolver
     private let rejecter: RNRejecter
+    private let resultKey: String
 
-    init(resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+    init(resolver: @escaping RNResolver, rejecter: @escaping RNRejecter, resultKey: String = "pdfUrl") {
         self.resolver = resolver
         self.rejecter = rejecter
+        self.resultKey = resultKey
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
@@ -545,7 +796,7 @@ private class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
         do {
             try FileManager.default.copyItem(at: url, to: dest)
             url.stopAccessingSecurityScopedResource()
-            resolver(["pdfUrl": dest.absoluteString])
+            resolver([resultKey: dest.absoluteString])
         } catch {
             url.stopAccessingSecurityScopedResource()
             rejecter("PICKER_FAILED", "Failed to copy file: \(error.localizedDescription)", error as NSError)
@@ -554,6 +805,32 @@ private class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         rejecter("PICKER_CANCELLED", "User cancelled", nil)
+    }
+}
+
+// MARK: - SaveDocumentPickerDelegate
+
+private class SaveDocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
+    static var associatedKey: UInt8 = 0
+
+    private let resolver: RNResolver
+    private let rejecter: RNRejecter
+
+    init(resolver: @escaping RNResolver, rejecter: @escaping RNRejecter) {
+        self.resolver = resolver
+        self.rejecter = rejecter
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else {
+            rejecter("SAVE_FAILED", "No destination selected", nil)
+            return
+        }
+        resolver(["savedPath": url.absoluteString])
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        rejecter("SAVE_FAILED", "User cancelled save", nil)
     }
 }
 

@@ -6,10 +6,9 @@ export type {
 } from './NativeNeurodoc';
 
 // Native view (codegen spec + commands) — consumers build their own wrapper
-export {
-  default as NativePdfViewerView,
-  Commands as PdfViewerCommands,
-} from './NativePdfViewerView';
+export { default as NativePdfViewerView } from './NativePdfViewerView';
+import { Commands as _PdfViewerCommands } from './NativePdfViewerView';
+export const PdfViewerCommands = _PdfViewerCommands;
 export type {
   NativePdfViewerViewProps,
   PdfViewerViewType,

@@ -3,9 +3,18 @@ package com.neurodoc
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.WritableNativeMap
+import com.tom_roush.pdfbox.contentstream.operator.Operator
+import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.cos.COSNumber
+import com.tom_roush.pdfbox.pdfparser.PDFStreamParser
+import com.tom_roush.pdfbox.pdfwriter.ContentStreamWriter
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import android.util.Log
+import com.tom_roush.pdfbox.cos.COSStream
+import com.tom_roush.pdfbox.pdmodel.graphics.form.PDFormXObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
@@ -60,38 +69,108 @@ object ContentEditor {
                 val page = doc.getPage(pageIndex)
                 val mediaBox = page.mediaBox
 
+                // Convert normalized bounding boxes to PDF coordinates (bottom-left origin)
+                val pdfRegions = pageEdits.map { edit ->
+                    floatArrayOf(
+                        edit.x * mediaBox.width,
+                        mediaBox.height * (1f - edit.y - edit.height),
+                        edit.width * mediaBox.width,
+                        edit.height * mediaBox.height
+                    )
+                }
+
+                // Step 1: Parse page content (PDPage implements PDContentStream),
+                //         filter out text tokens that fall inside target regions.
+                val allTokens = mutableListOf<Any>()
+                val parser = PDFStreamParser(page)
+                try {
+                    var token = parser.parseNextToken()
+                    while (token != null) {
+                        allTokens.add(token)
+                        token = parser.parseNextToken()
+                    }
+                } catch (_: Exception) { /* end of stream */ }
+
+                val filteredTokens = filterTextTokens(allTokens, pdfRegions)
+
+                // Step 2: Serialize filtered tokens and set as the page's content stream.
+                //         Using ContentStreamWriter → raw bytes → COSStream on the page.
+                val baos = ByteArrayOutputStream()
+                val writer = ContentStreamWriter(baos)
+                writer.writeTokens(filteredTokens)
+
+                val cosStream = doc.document.createCOSStream()
+                cosStream.createOutputStream().use { os ->
+                    os.write(baos.toByteArray())
+                }
+                page.cosObject.setItem(COSName.CONTENTS, cosStream)
+
+                Log.d("ContentEditor", "Page $pageIndex: ${allTokens.size} tokens -> ${filteredTokens.size} filtered (removed ${allTokens.size - filteredTokens.size})")
+
+                // Also filter text inside Form XObjects — template PDFs often
+                // store all visible content inside an XObject referenced via Do.
+                val pageResources = page.resources
+                if (pageResources != null) {
+                    for (xName in pageResources.xObjectNames) {
+                        try {
+                            val xObj = pageResources.getXObject(xName)
+                            if (xObj is PDFormXObject) {
+                                val xTokens = mutableListOf<Any>()
+                                val xParser = PDFStreamParser(xObj)
+                                try {
+                                    var t = xParser.parseNextToken()
+                                    while (t != null) { xTokens.add(t); t = xParser.parseNextToken() }
+                                } catch (_: Exception) {}
+
+                                Log.d("ContentEditor", "  XObject '$xName': ${xTokens.size} tokens")
+                                val xFiltered = filterTextTokens(xTokens, pdfRegions)
+                                val removed = xTokens.size - xFiltered.size
+                                Log.d("ContentEditor", "  XObject '$xName': removed $removed tokens")
+
+                                if (removed > 0) {
+                                    val xBaos = ByteArrayOutputStream()
+                                    ContentStreamWriter(xBaos).writeTokens(xFiltered)
+                                    (xObj.cosObject as? COSStream)?.createOutputStream()?.use { os ->
+                                        os.write(xBaos.toByteArray())
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ContentEditor", "XObject processing error: ${e.message}")
+                        }
+                    }
+                }
+
+                // Step 3: Append new replacement text. No white-box needed — the old
+                //         text operators have been removed from the stream above.
                 val cs = PDPageContentStream(
                     doc, page,
                     PDPageContentStream.AppendMode.APPEND,
-                    true,  // compress
-                    true   // reset context
+                    true,
+                    true
                 )
 
                 for (edit in pageEdits) {
-                    // Convert normalized top-left to PDF bottom-left coordinates
                     val pdfX = edit.x * mediaBox.width
-                    val pdfY = mediaBox.height - edit.y * mediaBox.height - edit.height * mediaBox.height
+                    val pdfY = mediaBox.height * (1f - edit.y - edit.height)
                     val pdfW = edit.width * mediaBox.width
                     val pdfH = edit.height * mediaBox.height
 
-                    // 1. White-out: draw white rectangle (slightly expanded)
-                    cs.setNonStrokingColor(255, 255, 255)
-                    cs.addRect(pdfX - 1f, pdfY - 1f, pdfW + 2f, pdfH + 2f)
-                    cs.fill()
-
-                    // 2. Determine font
                     val font = resolveFont(edit.fontName)
-                    val fontSize = edit.fontSize
-                        ?: (pdfH * 0.85f).coerceAtLeast(4f)
+                    var fontSize = edit.fontSize ?: (pdfH * 0.85f).coerceAtLeast(4f)
 
-                    // 3. Draw new text
+                    // Auto-shrink font to fit bounding box width
+                    while (fontSize > 4f) {
+                        val textWidth = font.getStringWidth(edit.newText) / 1000f * fontSize
+                        if (textWidth <= pdfW - 2f) break
+                        fontSize -= 0.5f
+                    }
+
                     cs.beginText()
                     cs.setFont(font, fontSize)
                     cs.setNonStrokingColor(edit.color[0], edit.color[1], edit.color[2])
-
-                    // Position: baseline ~20% up from bottom of box
-                    val baselineY = pdfY + pdfH * 0.15f
-                    cs.newLineAtOffset(pdfX + 1f, baselineY)
+                    // Baseline ~15% up from bottom of bounding box
+                    cs.newLineAtOffset(pdfX + 1f, pdfY + pdfH * 0.15f)
                     cs.showText(edit.newText)
                     cs.endText()
 
@@ -113,6 +192,97 @@ object ContentEditor {
             promise.reject("CONTENT_EDIT_FAILED", e.message, e)
         }
     }
+
+    /**
+     * Walk through the token list and drop text-show operators (Tj/TJ/'/") whose
+     * page-space position falls within any of the given [regions].
+     *
+     * Tracks the CTM (q/Q/cm) in addition to text-matrix operators (Tm/Td/TD/TL/T*)
+     * so that text positioned via CTM translations (e.g. large headers in
+     * template-generated PDFs) is correctly detected and removed.
+     */
+    private fun filterTextTokens(tokens: List<Any>, regions: List<FloatArray>): List<Any> {
+        // CTM (a, b, c, d, e, f) — identity to start
+        var ctmA = 1f; var ctmB = 0f; var ctmC = 0f
+        var ctmD = 1f; var ctmE = 0f; var ctmF = 0f
+        data class CtmSnap(val a: Float, val b: Float, val c: Float, val d: Float, val e: Float, val f: Float)
+        val ctmStack = ArrayDeque<CtmSnap>()
+
+        // Text-matrix state (in user/CTM space)
+        var tmX = 0f; var tmY = 0f
+        var tlmX = 0f; var tlmY = 0f
+        var textLeading = 0f
+
+        val result = mutableListOf<Any>()
+        val pending = mutableListOf<Any>()
+
+        for (token in tokens) {
+            if (token !is Operator) { pending.add(token); continue }
+            val op = token.name
+
+            // For move-then-show operators advance line position before checking
+            if (op == "'" || op == "\"") { tlmY -= textLeading; tmX = tlmX; tmY = tlmY }
+
+            // Map text position through CTM to get actual page coordinates
+            val pageX = tmX * ctmA + tmY * ctmC + ctmE
+            val pageY = tmX * ctmB + tmY * ctmD + ctmF
+
+            val skip = when (op) {
+                "Tj", "TJ", "'", "\"" -> regions.any { r -> isInRegion(pageX, pageY, r) }
+                else -> false
+            }
+
+            // Update graphics/text state (always, including for skipped tokens)
+            when (op) {
+                "q" -> ctmStack.addLast(CtmSnap(ctmA, ctmB, ctmC, ctmD, ctmE, ctmF))
+                "Q" -> ctmStack.removeLastOrNull()?.let {
+                    ctmA = it.a; ctmB = it.b; ctmC = it.c; ctmD = it.d; ctmE = it.e; ctmF = it.f
+                }
+                "cm" -> if (pending.size >= 6) {
+                    // new_CTM = pending_matrix × current_CTM  (pre-multiply)
+                    val a2 = num(pending[0]); val b2 = num(pending[1])
+                    val c2 = num(pending[2]); val d2 = num(pending[3])
+                    val e2 = num(pending[4]); val f2 = num(pending[5])
+                    val na = a2 * ctmA + b2 * ctmC; val nb = a2 * ctmB + b2 * ctmD
+                    val nc = c2 * ctmA + d2 * ctmC; val nd = c2 * ctmB + d2 * ctmD
+                    val ne = e2 * ctmA + f2 * ctmC + ctmE
+                    val nf = e2 * ctmB + f2 * ctmD + ctmF
+                    ctmA = na; ctmB = nb; ctmC = nc; ctmD = nd; ctmE = ne; ctmF = nf
+                }
+                "BT" -> { tmX = 0f; tmY = 0f; tlmX = 0f; tlmY = 0f; textLeading = 0f }
+                "Tm" -> if (pending.size >= 6) {
+                    tmX = num(pending[4]); tmY = num(pending[5]); tlmX = tmX; tlmY = tmY
+                }
+                "Td" -> if (pending.size >= 2) {
+                    tlmX += num(pending[0]); tlmY += num(pending[1]); tmX = tlmX; tmY = tlmY
+                }
+                "TD" -> if (pending.size >= 2) {
+                    textLeading = -num(pending[1])
+                    tlmX += num(pending[0]); tlmY += num(pending[1]); tmX = tlmX; tmY = tlmY
+                }
+                "TL" -> if (pending.isNotEmpty()) { textLeading = num(pending[0]) }
+                "T*" -> { tlmY -= textLeading; tmX = tlmX; tmY = tlmY }
+            }
+
+            if (!skip) { result.addAll(pending); result.add(token) }
+            pending.clear()
+        }
+
+        result.addAll(pending)
+        return result
+    }
+
+    /**
+     * Returns true if (x, y) is within region [rx, ry, rw, rh] with a small tolerance.
+     * Coordinates in PDF page space (bottom-left origin).
+     */
+    private fun isInRegion(x: Float, y: Float, region: FloatArray): Boolean {
+        val tolerance = 15f
+        return x >= region[0] - tolerance && x <= region[0] + region[2] + tolerance &&
+               y >= region[1] - tolerance && y <= region[1] + region[3] + tolerance
+    }
+
+    private fun num(obj: Any?): Float = (obj as? COSNumber)?.floatValue() ?: 0f
 
     // MARK: - Helpers
 

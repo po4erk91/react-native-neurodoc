@@ -1,7 +1,12 @@
 package com.neurodoc
 
+import android.app.Activity
+import android.content.Intent
+import com.facebook.react.bridge.ActivityEventListener
+import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.bridge.WritableNativeMap
@@ -24,7 +29,11 @@ import java.util.UUID
 class NeurodocModule(reactContext: ReactApplicationContext) :
     NativeNeurodocSpec(reactContext) {
 
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var pickerPromise: Promise? = null
+    private var pickerResultKey: String = "pdfUrl"
+    private var saveSourcePath: String? = null
 
     private val tempDir: File
         get() {
@@ -33,8 +42,99 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
             return dir
         }
 
+    private val activityEventListener = object : BaseActivityEventListener() {
+        override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+            if (requestCode == SAVE_DOCUMENT_REQUEST) {
+                handleSaveResult(resultCode, data)
+                return
+            }
+
+            if (requestCode != PICK_DOCUMENT_REQUEST && requestCode != PICK_FILE_REQUEST) return
+
+            val promise = pickerPromise ?: return
+            pickerPromise = null
+
+            if (resultCode != Activity.RESULT_OK) {
+                promise.reject("PICKER_CANCELLED", "User cancelled document picker")
+                return
+            }
+
+            val uri = data?.data
+            if (uri == null) {
+                promise.reject("PICKER_FAILED", "No file selected")
+                return
+            }
+
+            try {
+                // Copy to temp dir so we have a stable file:// URL
+                val contentResolver = reactApplicationContext.contentResolver
+                val ext = if (requestCode == PICK_DOCUMENT_REQUEST) ".pdf" else ""
+                val outputFile = File(tempDir, "${UUID.randomUUID()}$ext")
+
+                contentResolver.openInputStream(uri)?.use { input ->
+                    outputFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: run {
+                    promise.reject("PICKER_FAILED", "Could not read selected file")
+                    return
+                }
+
+                val result = WritableNativeMap().apply {
+                    putString(pickerResultKey, "file://${outputFile.absolutePath}")
+                }
+                promise.resolve(result)
+            } catch (e: Exception) {
+                promise.reject("PICKER_FAILED", "Failed to process selected file: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun handleSaveResult(resultCode: Int, data: Intent?) {
+        val promise = pickerPromise ?: return
+        pickerPromise = null
+        val sourcePath = saveSourcePath
+        saveSourcePath = null
+
+        if (resultCode != Activity.RESULT_OK) {
+            promise.reject("SAVE_FAILED", "User cancelled save")
+            return
+        }
+
+        val uri = data?.data
+        if (uri == null) {
+            promise.reject("SAVE_FAILED", "No destination selected")
+            return
+        }
+
+        if (sourcePath == null) {
+            promise.reject("SAVE_FAILED", "Source file path lost")
+            return
+        }
+
+        try {
+            val sourceFile = resolveFile(sourcePath)
+            val contentResolver = reactApplicationContext.contentResolver
+            contentResolver.openOutputStream(uri)?.use { output ->
+                sourceFile.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+            } ?: run {
+                promise.reject("SAVE_FAILED", "Failed to open output stream")
+                return
+            }
+
+            promise.resolve(WritableNativeMap().apply {
+                putString("savedPath", uri.toString())
+            })
+        } catch (e: Exception) {
+            promise.reject("SAVE_FAILED", "Failed to save PDF: ${e.message}", e)
+        }
+    }
+
     init {
         PDFBoxResourceLoader.init(reactContext)
+        reactContext.addActivityEventListener(activityEventListener)
     }
 
     // MARK: - getMetadata
@@ -552,10 +652,173 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    // MARK: - getBookmarks
+
+    override fun getBookmarks(pdfUrl: String, promise: Promise) {
+        scope.launch {
+            try {
+                BookmarkProcessor.getBookmarks(pdfUrl, promise)
+            } catch (e: Exception) {
+                promise.reject("BOOKMARK_FAILED", e.message, e)
+            }
+        }
+    }
+
+    // MARK: - addBookmarks
+
+    override fun addBookmarks(options: ReadableMap, promise: Promise) {
+        scope.launch {
+            try {
+                val pdfUrl = options.getString("pdfUrl")!!
+                val bookmarks = options.getArray("bookmarks")!!
+
+                BookmarkProcessor.addBookmarks(pdfUrl, bookmarks, tempDir, promise)
+            } catch (e: Exception) {
+                promise.reject("BOOKMARK_FAILED", e.message, e)
+            }
+        }
+    }
+
+    // MARK: - removeBookmarks
+
+    override fun removeBookmarks(options: ReadableMap, promise: Promise) {
+        scope.launch {
+            try {
+                val pdfUrl = options.getString("pdfUrl")!!
+                val indexes = options.getArray("indexes")!!
+
+                BookmarkProcessor.removeBookmarks(pdfUrl, indexes, tempDir, promise)
+            } catch (e: Exception) {
+                promise.reject("BOOKMARK_FAILED", e.message, e)
+            }
+        }
+    }
+
+    // MARK: - convertDocxToPdf
+
+    override fun convertDocxToPdf(options: ReadableMap, promise: Promise) {
+        scope.launch {
+            try {
+                val inputPath = options.getString("inputPath")!!
+                val preserveImages = if (options.hasKey("preserveImages"))
+                    options.getBoolean("preserveImages") else true
+                val pageSize = if (options.hasKey("pageSize") && !options.isNull("pageSize"))
+                    options.getString("pageSize")!! else "A4"
+
+                DocxConverter.convertDocxToPdf(inputPath, preserveImages, pageSize, tempDir, promise)
+            } catch (e: Exception) {
+                promise.reject("CONVERSION_FAILED", e.message, e)
+            }
+        }
+    }
+
+    // MARK: - convertPdfToDocx
+
+    override fun convertPdfToDocx(options: ReadableMap, promise: Promise) {
+        scope.launch {
+            try {
+                val inputPath = options.getString("inputPath")!!
+                val mode = if (options.hasKey("mode") && !options.isNull("mode"))
+                    options.getString("mode")!! else "textAndImages"
+                val language = if (options.hasKey("language") && !options.isNull("language"))
+                    options.getString("language")!! else "auto"
+
+                DocxConverter.convertPdfToDocx(
+                    reactApplicationContext, inputPath, mode, language, tempDir, promise
+                )
+            } catch (e: Exception) {
+                promise.reject("CONVERSION_FAILED", e.message, e)
+            }
+        }
+    }
+
     // MARK: - pickDocument
 
     override fun pickDocument(promise: Promise) {
-        promise.reject("NOT_IMPLEMENTED", "pickDocument is not yet implemented on Android")
+        val activity = currentActivity
+        if (activity == null) {
+            promise.reject("PICKER_FAILED", "No current activity")
+            return
+        }
+
+        pickerPromise = promise
+        pickerResultKey = "pdfUrl"
+
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/pdf"
+        }
+        activity.startActivityForResult(intent, PICK_DOCUMENT_REQUEST)
+    }
+
+    // MARK: - pickFile
+
+    override fun pickFile(types: ReadableArray, promise: Promise) {
+        val activity = currentActivity
+        if (activity == null) {
+            promise.reject("PICKER_FAILED", "No current activity")
+            return
+        }
+
+        pickerPromise = promise
+        pickerResultKey = "fileUrl"
+
+        val mimeTypes = mutableListOf<String>()
+        for (i in 0 until types.size()) {
+            val t = types.getString(i) ?: continue
+            // Map common UTType identifiers to MIME types
+            val mime = when (t) {
+                "org.openxmlformats.wordprocessingml.document" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                "com.microsoft.word.doc" -> "application/msword"
+                "com.adobe.pdf" -> "application/pdf"
+                "public.plain-text" -> "text/plain"
+                "public.image" -> "image/*"
+                "public.png" -> "image/png"
+                "public.jpeg" -> "image/jpeg"
+                else -> t // assume it's already a MIME type
+            }
+            mimeTypes.add(mime)
+        }
+
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            if (mimeTypes.size == 1) {
+                type = mimeTypes[0]
+            } else {
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())
+            }
+        }
+        activity.startActivityForResult(intent, PICK_FILE_REQUEST)
+    }
+
+    // MARK: - comparePdfs
+
+    override fun comparePdfs(options: ReadableMap, promise: Promise) {
+        scope.launch {
+            try {
+                val pdfUrl1 = options.getString("pdfUrl1")!!
+                val pdfUrl2 = options.getString("pdfUrl2")!!
+                val addedColor   = if (options.hasKey("addedColor") && !options.isNull("addedColor"))
+                    options.getString("addedColor")!! else "#00CC00"
+                val deletedColor = if (options.hasKey("deletedColor") && !options.isNull("deletedColor"))
+                    options.getString("deletedColor")!! else "#FF4444"
+                val changedColor = if (options.hasKey("changedColor") && !options.isNull("changedColor"))
+                    options.getString("changedColor")!! else "#FFAA00"
+                val opacity = if (options.hasKey("opacity")) options.getDouble("opacity").toFloat() else 0.35f
+                val annotateSource = if (options.hasKey("annotateSource")) options.getBoolean("annotateSource") else true
+                val annotateTarget = if (options.hasKey("annotateTarget")) options.getBoolean("annotateTarget") else true
+
+                DiffProcessor.comparePdfs(
+                    pdfUrl1, pdfUrl2,
+                    addedColor, deletedColor, changedColor,
+                    opacity, annotateSource, annotateTarget,
+                    tempDir, promise
+                )
+            } catch (e: Exception) {
+                promise.reject("COMPARISON_FAILED", e.message, e)
+            }
+        }
     }
 
     // MARK: - cleanupTempFiles
@@ -571,6 +834,34 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
                 promise.reject("CLEANUP_FAILED", e.message, e)
             }
         }
+    }
+
+    // MARK: - saveTo
+
+    override fun saveTo(pdfUrl: String, fileName: String, promise: Promise) {
+        val activity = currentActivity
+        if (activity == null) {
+            promise.reject("SAVE_FAILED", "No current activity")
+            return
+        }
+
+        val sourceFile = resolveFile(pdfUrl)
+        if (!sourceFile.exists()) {
+            promise.reject("SAVE_FAILED", "Source file does not exist: $pdfUrl")
+            return
+        }
+
+        pickerPromise = promise
+        saveSourcePath = pdfUrl
+
+        val safeName = if (fileName.endsWith(".pdf", ignoreCase = true)) fileName else "$fileName.pdf"
+
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_TITLE, safeName)
+        }
+        activity.startActivityForResult(intent, SAVE_DOCUMENT_REQUEST)
     }
 
     // MARK: - Helpers
@@ -596,5 +887,8 @@ class NeurodocModule(reactContext: ReactApplicationContext) :
 
     companion object {
         const val NAME = NativeNeurodocSpec.NAME
+        private const val PICK_DOCUMENT_REQUEST = 1001
+        private const val PICK_FILE_REQUEST = 1002
+        private const val SAVE_DOCUMENT_REQUEST = 1003
     }
 }

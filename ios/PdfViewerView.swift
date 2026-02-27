@@ -1354,6 +1354,26 @@ extension PdfViewerView: UICollectionViewDataSource {
             self?.presentImagePicker()
         }
 
+        let rotateRightAction = UIAction(
+            title: "Rotate Right",
+            image: UIImage(systemName: "rotate.right")
+        ) { [weak self] _ in
+            self?.rotatePageInGrid(at: pageIdx, by: 90)
+        }
+
+        let rotateLeftAction = UIAction(
+            title: "Rotate Left",
+            image: UIImage(systemName: "rotate.left")
+        ) { [weak self] _ in
+            self?.rotatePageInGrid(at: pageIdx, by: -90)
+        }
+
+        let rotateMenu = UIMenu(
+            title: "Rotate Page",
+            image: UIImage(systemName: "rotate.right"),
+            children: [rotateRightAction, rotateLeftAction]
+        )
+
         let deleteAction = UIAction(
             title: "Delete Page",
             image: UIImage(systemName: "trash"),
@@ -1362,7 +1382,7 @@ extension PdfViewerView: UICollectionViewDataSource {
             self?.deletePageInGrid(at: pageIdx)
         }
 
-        return UIMenu(children: [insertAction, deleteAction])
+        return UIMenu(children: [insertAction, rotateMenu, deleteAction])
     }
 
     public func collectionView(_ collectionView: UICollectionView, canMoveItemAt indexPath: IndexPath) -> Bool {
@@ -1387,6 +1407,15 @@ extension PdfViewerView: UICollectionViewDataSource {
 // MARK: - UICollectionViewDelegate
 
 extension PdfViewerView: UICollectionViewDelegate {
+    private func rotatePageInGrid(at index: Int, by degrees: Int) {
+        guard let doc = currentDocument, let page = doc.page(at: index) else { return }
+
+        page.rotation = (page.rotation + degrees + 360) % 360
+        thumbnailCache.removeAllObjects()
+        gridCollectionView.reloadItems(at: [IndexPath(item: index, section: 0)])
+        saveAndNotifyDocumentChanged()
+    }
+
     private func deletePageInGrid(at index: Int) {
         guard let doc = currentDocument, doc.pageCount > 1 else {
             return // Don't delete the last page

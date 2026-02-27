@@ -5,7 +5,10 @@ import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.bridge.WritableNativeMap
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotation
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationMarkup
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationText
@@ -30,6 +33,8 @@ object AnnotationProcessor {
                 val mediaBox = page.mediaBox
 
                 val colorArray = parseColor(annotMap.getString("color") ?: "#FFFF00")
+
+                val opacity = if (annotMap.hasKey("opacity")) annotMap.getDouble("opacity").toFloat() else 0.5f
 
                 when (type) {
                     "highlight" -> {
@@ -63,6 +68,22 @@ object AnnotationProcessor {
                             annotation.quadPoints = quadPoints
 
                             page.annotations.add(annotation)
+
+                            // Draw highlight into content stream so Android PdfRenderer shows it
+                            val cs = PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)
+                            cs.saveGraphicsState()
+                            val gs = PDExtendedGraphicsState()
+                            gs.nonStrokingAlphaConstant = opacity
+                            cs.setGraphicsStateParameters(gs)
+                            cs.setNonStrokingColor(
+                                (colorArray[0] * 255).toInt(),
+                                (colorArray[1] * 255).toInt(),
+                                (colorArray[2] * 255).toInt()
+                            )
+                            cs.addRect(pdfX, pdfY, pdfW, pdfH)
+                            cs.fill()
+                            cs.restoreGraphicsState()
+                            cs.close()
                         }
                     }
 
@@ -82,6 +103,40 @@ object AnnotationProcessor {
                         ))
 
                         page.annotations.add(annotation)
+
+                        // Draw note icon into content stream so Android PdfRenderer shows it
+                        val noteSize = 24f
+                        val cs = PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)
+                        cs.saveGraphicsState()
+
+                        // Filled circle as note marker
+                        cs.setNonStrokingColor(
+                            (colorArray[0] * 255).toInt(),
+                            (colorArray[1] * 255).toInt(),
+                            (colorArray[2] * 255).toInt()
+                        )
+                        val cx = pdfX + noteSize / 2
+                        val cy = pdfY + noteSize / 2
+                        val r = noteSize / 2
+                        // Approximate circle with 4 bezier curves
+                        val k = 0.5523f * r
+                        cs.moveTo(cx + r, cy)
+                        cs.curveTo(cx + r, cy + k, cx + k, cy + r, cx, cy + r)
+                        cs.curveTo(cx - k, cy + r, cx - r, cy + k, cx - r, cy)
+                        cs.curveTo(cx - r, cy - k, cx - k, cy - r, cx, cy - r)
+                        cs.curveTo(cx + k, cy - r, cx + r, cy - k, cx + r, cy)
+                        cs.fill()
+
+                        // White "N" letter inside
+                        cs.setNonStrokingColor(255, 255, 255)
+                        cs.beginText()
+                        cs.setFont(PDType1Font.HELVETICA_BOLD, noteSize * 0.6f)
+                        cs.newLineAtOffset(cx - noteSize * 0.17f, cy - noteSize * 0.2f)
+                        cs.showText("N")
+                        cs.endText()
+
+                        cs.restoreGraphicsState()
+                        cs.close()
                     }
 
                     "freehand" -> {
@@ -118,6 +173,25 @@ object AnnotationProcessor {
                         ))
 
                         page.annotations.add(annotation)
+
+                        // Draw freehand path into content stream
+                        if (pdfPoints.size >= 2) {
+                            val cs = PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)
+                            cs.saveGraphicsState()
+                            cs.setStrokingColor(
+                                (colorArray[0] * 255).toInt(),
+                                (colorArray[1] * 255).toInt(),
+                                (colorArray[2] * 255).toInt()
+                            )
+                            cs.setLineWidth(2f)
+                            cs.moveTo(pdfPoints[0][0], pdfPoints[0][1])
+                            for (k in 1 until pdfPoints.size) {
+                                cs.lineTo(pdfPoints[k][0], pdfPoints[k][1])
+                            }
+                            cs.stroke()
+                            cs.restoreGraphicsState()
+                            cs.close()
+                        }
                     }
                 }
             }

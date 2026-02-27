@@ -7,9 +7,11 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
-  SafeAreaView,
   Share,
+  Modal,
+  TextInput,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NeuroDoc } from 'react-native-neurodoc';
 import { PdfViewer, type PdfViewerRef } from './PdfViewer';
 import { PdfFieldMarker, type PdfFieldMarkerRef } from './PdfFieldMarker';
@@ -27,17 +29,20 @@ type Screen =
   | 'viewer'
   | 'metadata'
   | 'annotations'
+  | 'bookmarks'
   | 'formFields'
   | 'fieldMarker'
-  | 'formFiller';
+  | 'formFiller'
+  | 'compare';
 
-export default function App() {
+function AppContent() {
   const [screen, setScreen] = useState<Screen>('home');
   const [pdfUrl, setPdfUrl] = useState('');
   const [metadata, setMetadata] = useState<Record<string, unknown> | null>(
     null
   );
   const [annotations, setAnnotations] = useState<any[]>([]);
+  const [bookmarks, setBookmarks] = useState<any[]>([]);
   const [formFields, setFormFields] = useState<any[]>([]);
   const [pageInfo, setPageInfo] = useState({ page: 0, total: 0 });
   const [viewMode, setViewMode] = useState<'scroll' | 'single' | 'grid'>(
@@ -45,6 +50,16 @@ export default function App() {
   );
   const [loading, setLoading] = useState(false);
   const [templateUrl, setTemplateUrl] = useState('');
+  const [passwordPrompt, setPasswordPrompt] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [diffResult, setDiffResult] = useState<{
+    sourcePdfUrl: string;
+    targetPdfUrl: string;
+    totalAdded: number;
+    totalDeleted: number;
+    totalChanged: number;
+  } | null>(null);
+  const [compareTab, setCompareTab] = useState<'source' | 'target'>('target');
   const viewerRef = useRef<PdfViewerRef>(null);
   const fieldMarkerRef = useRef<PdfFieldMarkerRef>(null);
   const formFillerRef = useRef<PdfFormFillerRef>(null);
@@ -287,6 +302,65 @@ export default function App() {
     }
   }, [pdfUrl]);
 
+  // --- Get Bookmarks ---
+  const handleGetBookmarks = useCallback(async () => {
+    if (!pdfUrl) return;
+    setLoading(true);
+    try {
+      const result = await NeuroDoc.getBookmarks(pdfUrl);
+      setBookmarks(result.bookmarks);
+      setScreen('bookmarks');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [pdfUrl]);
+
+  // --- Add Bookmark ---
+  const handleAddBookmark = useCallback(async () => {
+    if (!pdfUrl) return;
+    setLoading(true);
+    try {
+      const result = await NeuroDoc.addBookmarks({
+        pdfUrl,
+        bookmarks: [
+          { title: 'Bookmark Page 1', pageIndex: 0 },
+        ],
+      });
+      setPdfUrl(result.pdfUrl);
+      Alert.alert('Done', 'Bookmark added to page 1');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [pdfUrl]);
+
+  // --- Remove All Bookmarks ---
+  const handleRemoveBookmarks = useCallback(async () => {
+    if (!pdfUrl) return;
+    setLoading(true);
+    try {
+      const { bookmarks: bms } = await NeuroDoc.getBookmarks(pdfUrl);
+      if (bms.length === 0) {
+        Alert.alert('No bookmarks', 'This PDF has no bookmarks to remove');
+        return;
+      }
+      const allIndexes = bms.map((_: any, i: number) => i);
+      const result = await NeuroDoc.removeBookmarks({
+        pdfUrl,
+        indexes: allIndexes,
+      });
+      setPdfUrl(result.pdfUrl);
+      Alert.alert('Done', `Removed ${bms.length} bookmark(s)`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [pdfUrl]);
+
   // --- Form Fields ---
   const handleGetFormFields = useCallback(async () => {
     if (!pdfUrl) return;
@@ -460,23 +534,59 @@ export default function App() {
         return;
       }
 
-      // Replace first 3 text blocks with demo text
-      const edits = result.textBlocks.slice(0, 3).map((block: any, i: number) => ({
-        pageIndex: 0,
-        boundingBox: block.boundingBox,
-        newText: `Edited #${i + 1}`,
-        fontSize: block.fontSize,
-      }));
-
-      const edited = await NeuroDoc.editContent({ pdfUrl, edits });
-      setPdfUrl(edited.pdfUrl);
-      Alert.alert(
-        'Content Edited',
-        `${edited.editsApplied} text block(s) replaced on page 1`
+      // Filter: only real text blocks (2+ chars, reasonable size < 5% page height)
+      const textBlocks = result.textBlocks.filter(
+        (b: any) =>
+          b.text.trim().length >= 2 &&
+          b.boundingBox.height < 0.05 &&
+          b.boundingBox.width < 0.5
       );
+
+      if (textBlocks.length === 0) {
+        Alert.alert('No suitable text', 'No small text blocks found on page 1');
+        return;
+      }
+
+      // Pick up to 3 blocks from the middle of the page
+      const sorted = [...textBlocks].sort(
+        (a: any, b: any) => a.boundingBox.y - b.boundingBox.y
+      );
+      const midStart = Math.floor(sorted.length / 3);
+      const chosen = sorted.slice(midStart, midStart + 3);
+
+      const preview = chosen
+        .map((b: any, i: number) => `${i + 1}. "${b.text}" → "Edited #${i + 1}"`)
+        .join('\n');
+
+      Alert.alert('Edit Content', `Will replace:\n${preview}`, [
+        { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
+        {
+          text: 'Apply',
+          onPress: async () => {
+            try {
+              const edits = chosen.map((block: any, i: number) => ({
+                pageIndex: 0,
+                boundingBox: block.boundingBox,
+                newText: `Edited #${i + 1}`,
+                fontSize: block.fontSize,
+              }));
+
+              const edited = await NeuroDoc.editContent({ pdfUrl, edits });
+              setPdfUrl(edited.pdfUrl);
+              Alert.alert(
+                'Content Edited',
+                `${edited.editsApplied} text block(s) replaced`
+              );
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]);
     } catch (e: any) {
       Alert.alert('Error', e.message);
-    } finally {
       setLoading(false);
     }
   }, [pdfUrl]);
@@ -529,6 +639,74 @@ export default function App() {
       setLoading(false);
     }
   }, [pdfUrl]);
+
+  // --- DOCX → PDF ---
+  const handleConvertDocxToPdf = useCallback(async () => {
+    setLoading(true);
+    try {
+      const picked = await NeuroDoc.pickFile([
+        'org.openxmlformats.wordprocessingml.document',
+      ]);
+      const result = await NeuroDoc.convertDocxToPdf({
+        inputPath: picked.fileUrl,
+      });
+      setPdfUrl(result.pdfUrl);
+      const msg = `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB`;
+      const warnings = result.warnings.length > 0
+        ? `\nWarnings: ${result.warnings.join(', ')}`
+        : '';
+      Alert.alert('DOCX → PDF', msg + warnings);
+    } catch (e: any) {
+      if (e.code !== 'PICKER_CANCELLED') {
+        Alert.alert('Error', e.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // --- PDF → DOCX ---
+  const handleConvertPdfToDocx = useCallback(async () => {
+    if (!pdfUrl) return;
+    setLoading(true);
+    try {
+      const result = await NeuroDoc.convertPdfToDocx({
+        inputPath: pdfUrl,
+      });
+      Alert.alert(
+        'PDF → DOCX',
+        `${result.pageCount} page(s), ${(result.fileSize / 1024).toFixed(0)} KB, mode: ${result.mode}`
+      );
+      await Share.share({ url: result.docxUrl });
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [pdfUrl]);
+
+  // --- Compare PDFs ---
+  const handleComparePdfs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const pick1 = await NeuroDoc.pickDocument();
+      const pick2 = await NeuroDoc.pickDocument();
+
+      const result = await NeuroDoc.comparePdfs({
+        pdfUrl1: pick1.pdfUrl,
+        pdfUrl2: pick2.pdfUrl,
+      });
+      setDiffResult(result);
+      setCompareTab('target');
+      setScreen('compare');
+    } catch (e: any) {
+      if (e.code !== 'PICKER_CANCELLED') {
+        Alert.alert('Compare Error', e.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // --- Cleanup ---
   const handleCleanup = useCallback(async () => {
@@ -633,6 +811,22 @@ export default function App() {
     }
   }, []);
 
+  // --- Save To ---
+  const handleSaveTo = useCallback(async () => {
+    if (!pdfUrl) return;
+    setLoading(true);
+    try {
+      const result = await NeuroDoc.saveTo(pdfUrl, 'document');
+      Alert.alert('Saved', `File saved to:\n${result.savedPath}`);
+    } catch (e: any) {
+      if (e.code !== 'SAVE_FAILED' || !e.message?.includes('cancel')) {
+        Alert.alert('Save Error', e.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [pdfUrl]);
+
   // --- Share ---
   const handleShare = useCallback(async () => {
     if (!pdfUrl) return;
@@ -644,6 +838,105 @@ export default function App() {
   }, [pdfUrl]);
 
   // ============ SCREENS ============
+
+  // --- Compare ---
+  if (screen === 'compare' && diffResult) {
+    const activePdfUrl =
+      compareTab === 'target' ? diffResult.targetPdfUrl : diffResult.sourcePdfUrl;
+    const { totalAdded, totalDeleted, totalChanged } = diffResult;
+
+    return (
+      <SafeAreaView style={styles.flex}>
+        <View style={styles.toolbar}>
+          <TouchableOpacity
+            onPress={() => {
+              setScreen('home');
+              setDiffResult(null);
+            }}
+          >
+            <Text style={styles.toolbarBtn}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.toolbarTitle}>Compare PDFs</Text>
+          {/* Tab switcher */}
+          <View style={styles.modeToggle}>
+            <TouchableOpacity
+              style={[styles.modeBtn, compareTab === 'source' && styles.modeBtnActive]}
+              onPress={() => setCompareTab('source')}
+            >
+              <Text style={[styles.modeBtnText, compareTab === 'source' && styles.modeBtnTextActive]}>
+                v1
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeBtn, compareTab === 'target' && styles.modeBtnActive]}
+              onPress={() => setCompareTab('target')}
+            >
+              <Text style={[styles.modeBtnText, compareTab === 'target' && styles.modeBtnTextActive]}>
+                v2
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Stats bar */}
+        <View style={styles.diffStatsBar}>
+          <View style={styles.diffStat}>
+            <View style={[styles.diffDot, { backgroundColor: '#00C853' }]} />
+            <Text style={styles.diffStatText}>
+              +{totalAdded} added
+            </Text>
+          </View>
+          <View style={styles.diffStat}>
+            <View style={[styles.diffDot, { backgroundColor: '#FF3B30' }]} />
+            <Text style={styles.diffStatText}>
+              -{totalDeleted} deleted
+            </Text>
+          </View>
+          <View style={styles.diffStat}>
+            <View style={[styles.diffDot, { backgroundColor: '#FF9500' }]} />
+            <Text style={styles.diffStatText}>
+              ~{totalChanged} changed
+            </Text>
+          </View>
+          <Text style={styles.diffTabHint}>
+            {compareTab === 'target' ? 'Showing v2 (new)' : 'Showing v1 (old)'}
+          </Text>
+        </View>
+
+        {/* Legend */}
+        <View style={styles.diffLegend}>
+          {compareTab === 'target' ? (
+            <>
+              <View style={[styles.legendSwatch, { backgroundColor: '#00CC0059' }]} />
+              <Text style={styles.legendText}>Green = added</Text>
+              <View style={[styles.legendSwatch, { backgroundColor: '#FFAA0059', marginLeft: 12 }]} />
+              <Text style={styles.legendText}>Yellow = changed</Text>
+            </>
+          ) : (
+            <>
+              <View style={[styles.legendSwatch, { backgroundColor: '#FF444459' }]} />
+              <Text style={styles.legendText}>Red = deleted</Text>
+              <View style={[styles.legendSwatch, { backgroundColor: '#FFAA0059', marginLeft: 12 }]} />
+              <Text style={styles.legendText}>Yellow = changed</Text>
+            </>
+          )}
+        </View>
+
+        <PdfViewer
+          key={activePdfUrl}
+          pdfUrl={activePdfUrl}
+          displayMode="scroll"
+          spacing={8}
+          minZoom={1}
+          maxZoom={5}
+          onPageChanged={(page, total) => setPageInfo({ page, total })}
+          onDocumentLoaded={(total) => setPageInfo({ page: 0, total })}
+          onDocumentLoadFailed={(error) => Alert.alert('Load Error', error)}
+          style={styles.flex}
+        />
+      </SafeAreaView>
+    );
+  }
 
   // --- Field Marker ---
   if (screen === 'fieldMarker' && pdfUrl) {
@@ -802,7 +1095,16 @@ export default function App() {
           showThumbnails={true}
           onPageChanged={(page, total) => setPageInfo({ page, total })}
           onDocumentLoaded={(total) => setPageInfo({ page: 0, total })}
-          onDocumentLoadFailed={(error) => Alert.alert('Load Error', error)}
+          onDocumentLoadFailed={(error) => {
+            const isPasswordError =
+              /password|encrypt|protected|security/i.test(error);
+            if (isPasswordError) {
+              setPasswordInput('');
+              setPasswordPrompt(true);
+            } else {
+              Alert.alert('Load Error', error);
+            }
+          }}
           onDocumentChanged={(newPdfUrl, newPageCount) => {
             setPdfUrl(newPdfUrl);
             setPageInfo((prev) => ({ ...prev, total: newPageCount }));
@@ -821,6 +1123,78 @@ export default function App() {
             <ActivityIndicator size="large" color="#fff" />
           </View>
         )}
+
+        <Modal
+          visible={passwordPrompt}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPasswordPrompt(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Password Required</Text>
+              <Text style={styles.modalSubtitle}>
+                This PDF is encrypted. Enter password to open.
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Password"
+                secureTextEntry
+                autoFocus
+                value={passwordInput}
+                onChangeText={setPasswordInput}
+                onSubmitEditing={async () => {
+                  if (!passwordInput) return;
+                  setPasswordPrompt(false);
+                  setLoading(true);
+                  try {
+                    const result = await NeuroDoc.decrypt({
+                      pdfUrl,
+                      password: passwordInput,
+                    });
+                    setPdfUrl(result.pdfUrl);
+                  } catch (e: any) {
+                    Alert.alert('Decrypt Error', e.message);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalBtnCancel}
+                  onPress={() => {
+                    setPasswordPrompt(false);
+                    setScreen('home');
+                  }}
+                >
+                  <Text style={styles.modalBtnCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalBtnOk}
+                  onPress={async () => {
+                    if (!passwordInput) return;
+                    setPasswordPrompt(false);
+                    setLoading(true);
+                    try {
+                      const result = await NeuroDoc.decrypt({
+                        pdfUrl,
+                        password: passwordInput,
+                      });
+                      setPdfUrl(result.pdfUrl);
+                    } catch (e: any) {
+                      Alert.alert('Decrypt Error', e.message);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.modalBtnOkText}>Unlock</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -876,6 +1250,42 @@ export default function App() {
                   ) : null}
                   <Text style={styles.listValue}>
                     color: {a.color} | ({a.x?.toFixed(2)}, {a.y?.toFixed(2)})
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // --- Bookmarks list ---
+  if (screen === 'bookmarks') {
+    return (
+      <SafeAreaView style={styles.flex}>
+        <View style={styles.toolbar}>
+          <TouchableOpacity onPress={() => setScreen('home')}>
+            <Text style={styles.toolbarBtn}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.toolbarTitle}>
+            Bookmarks ({bookmarks.length})
+          </Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <ScrollView style={styles.listContainer}>
+          {bookmarks.length === 0 ? (
+            <Text style={styles.emptyText}>No bookmarks found</Text>
+          ) : (
+            bookmarks.map((b, i) => (
+              <View key={i} style={styles.listRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listKey}>
+                    {'  '.repeat(b.level)}{b.title}
+                  </Text>
+                  <Text style={styles.listValue}>
+                    Page {b.pageIndex + 1}
+                    {b.children > 0 ? ` | ${b.children} child(ren)` : ''}
                   </Text>
                 </View>
               </View>
@@ -965,6 +1375,12 @@ export default function App() {
             disabled={!pdfUrl}
           />
           <ActionButton
+            title="Save"
+            onPress={handleSaveTo}
+            disabled={!pdfUrl}
+            color="#34C759"
+          />
+          <ActionButton
             title="Share"
             onPress={handleShare}
             disabled={!pdfUrl}
@@ -1028,6 +1444,29 @@ export default function App() {
             title="Add Note"
             onPress={handleAddNote}
             disabled={!pdfUrl}
+          />
+        </View>
+
+        {/* Bookmarks */}
+        <Text style={styles.sectionTitle}>Bookmarks</Text>
+        <View style={styles.buttonRow}>
+          <ActionButton
+            title="Get Bookmarks"
+            onPress={handleGetBookmarks}
+            disabled={!pdfUrl}
+            color="#16A085"
+          />
+          <ActionButton
+            title="Add Bookmark"
+            onPress={handleAddBookmark}
+            disabled={!pdfUrl}
+            color="#16A085"
+          />
+          <ActionButton
+            title="Remove All"
+            onPress={handleRemoveBookmarks}
+            disabled={!pdfUrl}
+            color="#16A085"
           />
         </View>
 
@@ -1117,6 +1556,32 @@ export default function App() {
           />
         </View>
 
+        {/* Document Conversion */}
+        <Text style={styles.sectionTitle}>Document Conversion</Text>
+        <View style={styles.buttonRow}>
+          <ActionButton
+            title="DOCX → PDF"
+            onPress={handleConvertDocxToPdf}
+            color="#2980B9"
+          />
+          <ActionButton
+            title="PDF → DOCX"
+            onPress={handleConvertPdfToDocx}
+            disabled={!pdfUrl}
+            color="#2980B9"
+          />
+        </View>
+
+        {/* Document Comparison */}
+        <Text style={styles.sectionTitle}>Document Comparison</Text>
+        <View style={styles.buttonRow}>
+          <ActionButton
+            title="Compare PDFs..."
+            onPress={handleComparePdfs}
+            color="#5856D6"
+          />
+        </View>
+
         {/* Templates */}
         <Text style={styles.sectionTitle}>Templates</Text>
         <View style={styles.buttonRow}>
@@ -1154,6 +1619,14 @@ export default function App() {
         {loading && <ActivityIndicator style={styles.loader} size="large" />}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
 
@@ -1330,5 +1803,111 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'center',
     marginTop: 40,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 24,
+    width: 300,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalBtnCancel: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  modalBtnCancelText: {
+    color: '#999',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalBtnOk: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  modalBtnOkText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  diffStatsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    gap: 12,
+  },
+  diffStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  diffDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  diffStatText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+  diffTabHint: {
+    marginLeft: 'auto',
+    fontSize: 12,
+    color: '#999',
+  },
+  diffLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: '#fafafa',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    gap: 4,
+  },
+  legendSwatch: {
+    width: 16,
+    height: 10,
+    borderRadius: 2,
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#555',
   },
 });

@@ -498,12 +498,151 @@
                               rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
 }
 
+// MARK: - getBookmarks
+
+- (void)getBookmarks:(NSString *)pdfUrl
+             resolve:(RCTPromiseResolveBlock)resolve
+              reject:(RCTPromiseRejectBlock)reject {
+    [_impl getBookmarksWithPdfUrl:pdfUrl
+                         resolver:^(NSDictionary *result) { resolve(result); }
+                         rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
+// MARK: - addBookmarks
+
+- (void)addBookmarks:(JS::NativeNeurodoc::SpecAddBookmarksOptions &)options
+             resolve:(RCTPromiseResolveBlock)resolve
+              reject:(RCTPromiseRejectBlock)reject {
+    NSString *pdfUrl = options.pdfUrl();
+
+    auto rawBookmarks = options.bookmarks();
+    NSMutableArray<NSDictionary *> *bookmarks = [NSMutableArray new];
+
+    for (size_t i = 0; i < rawBookmarks.size(); i++) {
+        auto b = rawBookmarks[(int)i];
+        NSMutableDictionary *dict = [NSMutableDictionary new];
+        dict[@"title"] = b.title();
+        dict[@"pageIndex"] = @(b.pageIndex());
+        if (b.parentIndex().has_value()) dict[@"parentIndex"] = @(b.parentIndex().value());
+        [bookmarks addObject:dict];
+    }
+
+    [_impl addBookmarksWithPdfUrl:pdfUrl
+                        bookmarks:bookmarks
+                         resolver:^(NSDictionary *result) { resolve(result); }
+                         rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
+// MARK: - removeBookmarks
+
+- (void)removeBookmarks:(JS::NativeNeurodoc::SpecRemoveBookmarksOptions &)options
+                resolve:(RCTPromiseResolveBlock)resolve
+                 reject:(RCTPromiseRejectBlock)reject {
+    NSString *pdfUrl = options.pdfUrl();
+    auto rawIndexes = options.indexes();
+    NSMutableArray<NSNumber *> *indexes = [NSMutableArray new];
+    for (size_t i = 0; i < rawIndexes.size(); i++) {
+        [indexes addObject:@(rawIndexes[(int)i])];
+    }
+
+    [_impl removeBookmarksWithPdfUrl:pdfUrl
+                             indexes:indexes
+                            resolver:^(NSDictionary *result) { resolve(result); }
+                            rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
+// MARK: - convertDocxToPdf
+
+- (void)convertDocxToPdf:(JS::NativeNeurodoc::SpecConvertDocxToPdfOptions &)options
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+    NSString *inputPath = options.inputPath();
+    bool preserveImages = options.preserveImages().has_value() ? options.preserveImages().value() : true;
+    NSString *pageSize = options.pageSize() ?: @"A4";
+
+    [_impl convertDocxToPdfWithInputPath:inputPath
+                          preserveImages:preserveImages
+                                pageSize:pageSize
+                                resolver:^(NSDictionary *result) { resolve(result); }
+                                rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
+// MARK: - convertPdfToDocx
+
+- (void)convertPdfToDocx:(JS::NativeNeurodoc::SpecConvertPdfToDocxOptions &)options
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+    NSString *inputPath = options.inputPath();
+    NSString *mode = options.mode() ?: @"textAndImages";
+    NSString *language = options.language() ?: @"auto";
+
+    [_impl convertPdfToDocxWithInputPath:inputPath
+                                    mode:mode
+                                language:language
+                                resolver:^(NSDictionary *result) { resolve(result); }
+                                rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
 // MARK: - pickDocument
 
 - (void)pickDocument:(RCTPromiseResolveBlock)resolve
               reject:(RCTPromiseRejectBlock)reject {
     [_impl pickDocumentWithResolver:^(NSDictionary *result) { resolve(result); }
                            rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
+// MARK: - pickFile
+
+- (void)pickFile:(NSArray *)types
+         resolve:(RCTPromiseResolveBlock)resolve
+          reject:(RCTPromiseRejectBlock)reject {
+    NSMutableArray<NSString *> *typeStrings = [NSMutableArray new];
+    for (id item in types) {
+        if ([item isKindOfClass:[NSString class]]) {
+            [typeStrings addObject:item];
+        }
+    }
+    [_impl pickFileWithTypes:typeStrings
+                    resolver:^(NSDictionary *result) { resolve(result); }
+                    rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
+// MARK: - saveTo
+
+- (void)saveTo:(NSString *)pdfUrl
+      fileName:(NSString *)fileName
+       resolve:(RCTPromiseResolveBlock)resolve
+        reject:(RCTPromiseRejectBlock)reject {
+    [_impl saveToPdfUrl:pdfUrl
+              fileName:fileName
+              resolver:^(NSDictionary *result) { resolve(result); }
+              rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
+}
+
+// MARK: - comparePdfs
+
+- (void)comparePdfs:(JS::NativeNeurodoc::SpecComparePdfsOptions &)options
+            resolve:(RCTPromiseResolveBlock)resolve
+             reject:(RCTPromiseRejectBlock)reject {
+    NSString *pdfUrl1 = options.pdfUrl1();
+    NSString *pdfUrl2 = options.pdfUrl2();
+    NSString *addedColor   = options.addedColor()   ?: @"#00CC00";
+    NSString *deletedColor = options.deletedColor() ?: @"#FF4444";
+    NSString *changedColor = options.changedColor() ?: @"#FFAA00";
+    double opacity         = options.opacity().has_value()         ? options.opacity().value()         : 0.35;
+    bool annotateSource    = options.annotateSource().has_value()  ? options.annotateSource().value()  : true;
+    bool annotateTarget    = options.annotateTarget().has_value()  ? options.annotateTarget().value()  : true;
+
+    [_impl comparePdfsWithPdfUrl1:pdfUrl1
+                           pdfUrl2:pdfUrl2
+                        addedColor:addedColor
+                      deletedColor:deletedColor
+                      changedColor:changedColor
+                           opacity:opacity
+                   annotateSource:annotateSource
+                   annotateTarget:annotateTarget
+                          resolver:^(NSDictionary *result) { resolve(result); }
+                          rejecter:^(NSString *code, NSString *message, NSError *error) { reject(code, message, error); }];
 }
 
 // MARK: - cleanupTempFiles

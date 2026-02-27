@@ -41,82 +41,86 @@ class ContentEditor {
             ))
         }
 
-        let pdfData = NSMutableData()
-        UIGraphicsBeginPDFContextToData(pdfData, .zero, nil)
-
         var editsApplied = 0
 
-        for i in 0..<doc.pageCount {
-            guard let page = doc.page(at: i) else { continue }
+        for (pageIndex, pageEdits) in editsByPage {
+            guard pageIndex >= 0 && pageIndex < doc.pageCount,
+                  let page = doc.page(at: pageIndex) else { continue }
             let bounds = page.bounds(for: .mediaBox)
 
-            UIGraphicsBeginPDFPageWithInfo(bounds, nil)
-            guard let ctx = UIGraphicsGetCurrentContext() else { continue }
+            for edit in pageEdits {
+                // Convert normalized (0-1, top-left origin) to PDF coords (points, bottom-left origin)
+                let pdfX = CGFloat(edit.x) * bounds.width
+                let pdfW = CGFloat(edit.width) * bounds.width
+                let pdfH = CGFloat(edit.height) * bounds.height
+                // top-left y → bottom-left y: flip and account for height
+                let pdfY = bounds.height - CGFloat(edit.y) * bounds.height - pdfH
 
-            // Draw original page vector content
-            ctx.saveGState()
-            ctx.translateBy(x: 0, y: bounds.height)
-            ctx.scaleBy(x: 1, y: -1)
-            page.draw(with: .mediaBox, to: ctx)
-            ctx.restoreGState()
+                let annotRect = CGRect(x: pdfX, y: pdfY, width: pdfW, height: pdfH)
 
-            // Apply edits for this page (UIKit coords: top-left origin after restoreGState)
-            if let pageEdits = editsByPage[i] {
-                for edit in pageEdits {
-                    let rectX = CGFloat(edit.x) * bounds.width
-                    let rectY = CGFloat(edit.y) * bounds.height
-                    let rectW = CGFloat(edit.width) * bounds.width
-                    let rectH = CGFloat(edit.height) * bounds.height
+                // 1. White-out: add a white rectangle annotation to cover original text
+                let whiteOut = PDFAnnotation(bounds: annotRect.insetBy(dx: -1, dy: -1), forType: .freeText, withProperties: nil)
+                whiteOut.font = UIFont.systemFont(ofSize: 1)
+                whiteOut.contents = ""
+                whiteOut.color = .clear
+                whiteOut.backgroundColor = .white
+                // Use interior color for the fill
+                whiteOut.setValue(UIColor.white, forAnnotationKey: .color)
+                // Make border invisible
+                let whiteBorder = PDFBorder()
+                whiteBorder.lineWidth = 0
+                whiteOut.border = whiteBorder
+                page.addAnnotation(whiteOut)
 
-                    let drawRect = CGRect(x: rectX, y: rectY, width: rectW, height: rectH)
-
-                    // 1. White-out original text (slightly expanded for coverage)
-                    UIColor.white.setFill()
-                    UIRectFill(drawRect.insetBy(dx: -1, dy: -1))
-
-                    // 2. Determine font
-                    let targetFontSize: CGFloat
-                    if let fs = edit.fontSize, fs > 0 {
-                        targetFontSize = CGFloat(fs)
-                    } else {
-                        targetFontSize = rectH * 0.85
-                    }
-
-                    let font = UIFont(name: edit.fontName ?? "Helvetica", size: targetFontSize)
-                        ?? UIFont.systemFont(ofSize: targetFontSize)
-
-                    // 3. Draw new text vertically centered
-                    let attrs: [NSAttributedString.Key: Any] = [
-                        .font: font,
-                        .foregroundColor: edit.color,
-                    ]
-                    let textSize = (edit.newText as NSString).size(withAttributes: attrs)
-                    let yOffset = max(0, (drawRect.height - textSize.height) / 2)
-                    let textRect = CGRect(
-                        x: drawRect.origin.x + 1,
-                        y: drawRect.origin.y + yOffset,
-                        width: drawRect.width - 2,
-                        height: textSize.height
-                    )
-                    (edit.newText as NSString).draw(in: textRect, withAttributes: attrs)
-
-                    editsApplied += 1
+                // 2. Determine font with auto-shrink
+                var fontSize: CGFloat
+                if let fs = edit.fontSize, fs > 0 {
+                    fontSize = CGFloat(fs)
+                } else {
+                    fontSize = pdfH * 0.85
                 }
+
+                let fontName = edit.fontName ?? "Helvetica"
+                let minFontSize: CGFloat = 4.0
+                let availableWidth = pdfW - 2
+
+                var font = UIFont(name: fontName, size: fontSize)
+                    ?? UIFont.systemFont(ofSize: fontSize)
+                var attrs: [NSAttributedString.Key: Any] = [.font: font]
+                var textSize = (edit.newText as NSString).size(withAttributes: attrs)
+
+                while textSize.width > availableWidth && fontSize > minFontSize {
+                    fontSize -= 0.5
+                    font = UIFont(name: fontName, size: fontSize)
+                        ?? UIFont.systemFont(ofSize: fontSize)
+                    attrs[.font] = font
+                    textSize = (edit.newText as NSString).size(withAttributes: attrs)
+                }
+
+                // 3. Add FreeText annotation with the new text
+                let textAnnot = PDFAnnotation(bounds: annotRect, forType: .freeText, withProperties: nil)
+                textAnnot.contents = edit.newText
+                textAnnot.font = font
+                textAnnot.fontColor = edit.color
+                textAnnot.color = .clear
+                textAnnot.backgroundColor = .clear
+                let textBorder = PDFBorder()
+                textBorder.lineWidth = 0
+                textAnnot.border = textBorder
+                textAnnot.alignment = .left
+                page.addAnnotation(textAnnot)
+
+                editsApplied += 1
             }
         }
 
-        UIGraphicsEndPDFContext()
-
         let outputUrl = tempDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
-        do {
-            try pdfData.write(to: outputUrl, options: .atomic)
-            resolver([
-                "pdfUrl": outputUrl.absoluteString,
-                "editsApplied": editsApplied,
-            ] as [String: Any])
-        } catch {
-            rejecter("CONTENT_EDIT_FAILED", "Failed to save edited PDF: \(error.localizedDescription)", error as NSError)
-        }
+        doc.write(to: outputUrl)
+
+        resolver([
+            "pdfUrl": outputUrl.absoluteString,
+            "editsApplied": editsApplied,
+        ] as [String: Any])
     }
 
     // MARK: - Helpers

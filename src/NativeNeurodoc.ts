@@ -16,7 +16,11 @@ export type NeurodocErrorCode =
   | 'TEXT_EXTRACTION_FAILED'
   | 'REDACTION_FAILED'
   | 'CONTENT_EDIT_FAILED'
-  | 'CLEANUP_FAILED';
+  | 'BOOKMARK_FAILED'
+  | 'CONVERSION_FAILED'
+  | 'COMPARISON_FAILED'
+  | 'CLEANUP_FAILED'
+  | 'SAVE_FAILED';
 
 export interface NeurodocError extends Error {
   code: NeurodocErrorCode;
@@ -374,12 +378,134 @@ export interface Spec extends TurboModule {
     pdfUrl: string;
   }>;
 
+  // --- Bookmarks ---
+
+  /**
+   * Get all bookmarks (outline) from a PDF.
+   * Returns a flat list with nesting level info.
+   */
+  getBookmarks(pdfUrl: string): Promise<{
+    bookmarks: Array<{
+      title: string;
+      pageIndex: number;
+      level: number;
+      children: number;
+    }>;
+  }>;
+
+  /**
+   * Add bookmarks to a PDF.
+   */
+  addBookmarks(options: {
+    pdfUrl: string;
+    bookmarks: Array<{
+      title: string;
+      pageIndex: number;
+      parentIndex?: number;
+    }>;
+  }): Promise<{
+    pdfUrl: string;
+  }>;
+
+  /**
+   * Remove bookmarks from a PDF by their flat-list indexes.
+   */
+  removeBookmarks(options: {
+    pdfUrl: string;
+    indexes: number[];
+  }): Promise<{
+    pdfUrl: string;
+  }>;
+
+  // --- Document Conversion ---
+
+  /**
+   * Convert a DOCX file to PDF.
+   * Supports: paragraphs, headings, bold/italic/underline, font size/color,
+   * inline images, basic tables, bullet/numbered lists.
+   */
+  convertDocxToPdf(options: {
+    inputPath: string;
+    preserveImages?: boolean; // default true
+    pageSize?: string; // 'A4' | 'Letter' | 'Legal', default 'A4'
+  }): Promise<{
+    pdfUrl: string;
+    pageCount: number;
+    fileSize: number;
+    warnings: string[];
+  }>;
+
+  /**
+   * Convert a PDF file to DOCX.
+   * Uses text extraction (native + OCR fallback) to reconstruct document structure.
+   * Layout fidelity depends on the PDF source.
+   */
+  convertPdfToDocx(options: {
+    inputPath: string;
+    mode?: string; // 'text' | 'textAndImages' | 'ocrFallback', default 'textAndImages'
+    language?: string; // for OCR fallback, default 'auto'
+  }): Promise<{
+    docxUrl: string;
+    pageCount: number;
+    fileSize: number;
+    mode: string;
+  }>;
+
   // --- Document Picker ---
 
   /**
    * Open system document picker to select a PDF file.
    */
   pickDocument(): Promise<{ pdfUrl: string }>;
+
+  /**
+   * Open system document picker to select a file of specified types.
+   * @param types - Array of UTType identifiers (iOS) / MIME types (Android)
+   *   e.g. ['org.openxmlformats.wordprocessingml.document'] for DOCX
+   */
+  pickFile(types: string[]): Promise<{ fileUrl: string }>;
+
+  // --- Save ---
+
+  /**
+   * Open system "Save As" dialog for the user to choose where to save the PDF.
+   * On Android: uses ACTION_CREATE_DOCUMENT (Storage Access Framework).
+   * On iOS: uses UIDocumentPickerViewController in export mode.
+   */
+  saveTo(pdfUrl: string, fileName: string): Promise<{ savedPath: string }>;
+
+  // --- Diff / Compare ---
+
+  /**
+   * Compare two PDF documents and return annotated versions with highlighted differences.
+   * Uses word-level text extraction + Myers diff algorithm.
+   * - added blocks (in doc2 only) → highlighted on targetPdfUrl (green by default)
+   * - deleted blocks (in doc1 only) → highlighted on sourcePdfUrl (red by default)
+   * - changed blocks (fuzzy match >80%) → highlighted on both (yellow by default)
+   */
+  comparePdfs(options: {
+    pdfUrl1: string;
+    pdfUrl2: string;
+    addedColor?: string;      // hex, default '#00CC00'
+    deletedColor?: string;    // hex, default '#FF4444'
+    changedColor?: string;    // hex, default '#FFAA00'
+    opacity?: number;         // 0-1, default 0.35
+    annotateSource?: boolean; // annotate pdfUrl1 with deletions/changes, default true
+    annotateTarget?: boolean; // annotate pdfUrl2 with additions/changes, default true
+  }): Promise<{
+    sourcePdfUrl: string;  // annotated pdfUrl1 (empty string if annotateSource=false)
+    targetPdfUrl: string;  // annotated pdfUrl2 (empty string if annotateTarget=false)
+    changes: Array<{
+      pageIndex1: number;  // -1 if page only exists in doc2
+      pageIndex2: number;  // -1 if page only exists in doc1
+      added: number;
+      deleted: number;
+      changed: number;
+    }>;
+    totalAdded: number;
+    totalDeleted: number;
+    totalChanged: number;
+  }>;
 
   // --- Cleanup ---
 

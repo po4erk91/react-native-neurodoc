@@ -410,10 +410,7 @@ export interface Spec extends TurboModule {
   /**
    * Remove bookmarks from a PDF by their flat-list indexes.
    */
-  removeBookmarks(options: {
-    pdfUrl: string;
-    indexes: number[];
-  }): Promise<{
+  removeBookmarks(options: { pdfUrl: string; indexes: number[] }): Promise<{
     pdfUrl: string;
   }>;
 
@@ -486,18 +483,18 @@ export interface Spec extends TurboModule {
   comparePdfs(options: {
     pdfUrl1: string;
     pdfUrl2: string;
-    addedColor?: string;      // hex, default '#00CC00'
-    deletedColor?: string;    // hex, default '#FF4444'
-    changedColor?: string;    // hex, default '#FFAA00'
-    opacity?: number;         // 0-1, default 0.35
+    addedColor?: string; // hex, default '#00CC00'
+    deletedColor?: string; // hex, default '#FF4444'
+    changedColor?: string; // hex, default '#FFAA00'
+    opacity?: number; // 0-1, default 0.35
     annotateSource?: boolean; // annotate pdfUrl1 with deletions/changes, default true
     annotateTarget?: boolean; // annotate pdfUrl2 with additions/changes, default true
   }): Promise<{
-    sourcePdfUrl: string;  // annotated pdfUrl1 (empty string if annotateSource=false)
-    targetPdfUrl: string;  // annotated pdfUrl2 (empty string if annotateTarget=false)
+    sourcePdfUrl: string; // annotated pdfUrl1 (empty string if annotateSource=false)
+    targetPdfUrl: string; // annotated pdfUrl2 (empty string if annotateTarget=false)
     changes: Array<{
-      pageIndex1: number;  // -1 if page only exists in doc2
-      pageIndex2: number;  // -1 if page only exists in doc1
+      pageIndex1: number; // -1 if page only exists in doc2
+      pageIndex2: number; // -1 if page only exists in doc1
       added: number;
       deleted: number;
       changed: number;
